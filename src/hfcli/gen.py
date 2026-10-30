@@ -7,12 +7,11 @@ from typing import Annotated
 
 import typer
 
-from hfcore import credentials, inputs, lifecycle, requests, validation
+from hfcore import credentials, downloads, inputs, lifecycle, requests, validation
 from hfcore.api import ApiClient
 from hfcore.catalog import load_catalog
 from hfcore.config import config_dir
-from hfcore.errors import HiggsError
-from hfcli.output import JsonOpt, print_json
+from hfcli.output import JsonOpt, print_json, waiting_status
 from hfcli.params import parse_params
 from hfcli.projects import ProjectOpt, current_project
 
@@ -32,28 +31,40 @@ def gen(
     ] = None,
     no_validate: Annotated[bool, typer.Option("--no-validate", help="Do not validate against the catalog.")] = False,
     no_wait: Annotated[bool, typer.Option("--no-wait", help="Return the request id right after submitting.")] = False,
+    name: Annotated[
+        str | None, typer.Option("--name", help="Slug of the Generation file names (default: first words of the prompt).")
+    ] = None,
     project: ProjectOpt = None,
     as_json: JsonOpt = False,
 ) -> None:
     """Submit a Request to any Endpoint."""
-    # Until polling (#8) exists, waiting must be skipped explicitly, so adding it later
-    # never silently changes what an existing command does.
-    if not no_wait:
-        raise HiggsError(
-            "Waiting for the result is not implemented yet",
-            hint="Pass --no-wait to return right after the submit.",
-            code="not_implemented",
-        )
     params = parse_params(param or [])
     target = current_project(project)
     if not no_validate:
         validation.validate_request(load_catalog(config_dir()), endpoint, params, cwd=Path.cwd())
     with ApiClient(credentials.load_credentials()) as client:
         resolved = inputs.resolve_inputs(client, target, params, cwd=Path.cwd())
-        record = lifecycle.submit_request(client, target, endpoint, resolved.params, inputs=resolved.inputs)
-    path = requests.request_path(target, record.request_id)
+        record = lifecycle.submit_request(
+            client, target, endpoint, resolved.params, inputs=resolved.inputs, name=name
+        )
+        path = requests.request_path(target, record.request_id)
+        if no_wait:
+            if as_json:
+                print_json({"request_id": record.request_id, "path": str(path), "record": record})
+            else:
+                typer.echo(f"Submitted Request {record.request_id} ({record.status})")
+                typer.echo(f"Record: {path}")
+            return
+        with waiting_status(record.request_id, quiet=as_json) as on_progress:
+            record, status = lifecycle.wait_for_request(client, target, record, on_progress=on_progress)
+        if record.status != "completed":
+            raise lifecycle.RequestNotCompleted(record)
+        generations = downloads.download_request(client, target, record, status)
     if as_json:
-        print_json({"request_id": record.request_id, "path": str(path), "record": record})
+        print_json({"request_id": record.request_id, "path": str(path), "record": record, "generations": generations})
     else:
-        typer.echo(f"Submitted Request {record.request_id} ({record.status})")
-        typer.echo(f"Record: {path}")
+        typer.echo(f"Completed Request {record.request_id}")
+        for generation in generations:
+            typer.echo(f"  {generation.path.relative_to(target.path)}")
+            for artifact in generation.artifacts:
+                typer.echo(f"    + {artifact.name}")

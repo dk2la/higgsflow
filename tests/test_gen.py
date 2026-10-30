@@ -127,18 +127,6 @@ def test_a_param_without_a_value_is_rejected(higgs, project, api_key, respx_mock
     assert not respx_mock.calls
 
 
-def test_gen_requires_no_wait_until_waiting_exists(higgs, project, api_key, respx_mock):
-    # Waiting for the result (#8) is not built yet; validation (#14) no longer needs a flag.
-    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--json")
-
-    assert result.exit_code == 1
-    error = json.loads(result.output)["error"]
-    assert error["code"] == "not_implemented"
-    assert "--no-wait" in error["hint"]
-    assert not respx_mock.calls
-    assert not list((project / ".hf" / "requests").iterdir())
-
-
 # Error bodies from the docs ("Errors and retries", "Authentication", "API keys",
 # "Idempotent requests", "Rate limits"); the others follow the same FastAPI envelope.
 API_ERRORS = [

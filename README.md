@@ -35,9 +35,18 @@ higgs projects                   # lists the Projects under the projects root
 higgs models list --mode i2v     # Models with their Family, Modes, quality tiers and "from" price
 higgs models show kling-3.0      # every Endpoint of a Model: parameters, allowed values, prompt limits
 cd ~/hf-projects/demo
-higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=4 \
-  --no-wait                      # validates, submits a Request; its record lands in .hf/requests/<request_id>.json
+higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=4
+                                 # validates, submits a Request, waits for it and downloads the Generations
+higgs gen bytedance/seedance-2.0/text-to-video -p prompt="Waves at dusk" --name sunset-beach \
+  --no-wait                      # only submits; the record lands in .hf/requests/<request_id>.json
 ```
+
+Without `--no-wait`, `higgs gen` polls the Request (2 s backing off to 10 s, waiting out a full queue and
+retrying transient errors) and downloads every Generation and Artifact into `generations/YYYY-MM-DD/` as
+`YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN[-N].<ext>`, each with a `<file>.json` describing how it was
+made. `<slug>` is `--name` or the first words of the prompt; `vNN` counts the Project's Requests with that
+slug. For a raw `gen` the model slug and Mode come from the Endpoint id (see DESIGN.md §5). A failed, nsfw
+or canceled Request ends with an error and downloads nothing.
 
 The key can also come from `HF_KEY="id:secret"` or `HF_API_KEY` + `HF_API_SECRET`, which take precedence
 over the saved file. Project-scoped commands find the Project by walking up from the current directory to
@@ -70,8 +79,6 @@ the JSON Schema keyword that failed (`required`, `type`, `enum`, `maximum`, `max
 A local file path stands in for the URL it will be uploaded to, so `-p image_url=inputs/a.jpg` is valid.
 `--no-validate` skips the check and submits the parameters as they are, to any path, even one missing from the
 catalog (a wrong id is a free 404). An Endpoint id that is not in the catalog fails without `--no-validate`.
-
-For now `higgs gen` also requires `--no-wait` (waiting for and downloading the result is not built yet).
 
 ### Models missing from the docs: `models.local.toml`
 
