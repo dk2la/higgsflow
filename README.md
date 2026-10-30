@@ -56,8 +56,9 @@ canceled one is recorded and left alone, and one whose links have expired is rep
 call. If a Request cannot be synced, the others still are and `sync` exits with an error; run it again.
 `download` fails before any API call once the Request's `expires_at` has passed or it was deleted with
 `higgs delete`. `list` reads only `.hf/requests/` (no API calls, no key needed); `--status` is repeatable
-(`pending` = not finished yet), `--model` matches a part of the model slug or Endpoint id, `--date` picks
-one day.
+(`pending` = not finished yet), `--date` picks one day. `--model` takes a Model as `higgs models list` shows
+it (`kling-3.0` or `"Kling 3.0"`: every tier and Mode of that Model, not Kling 3.0 Turbo) and also matches
+any Request whose Endpoint id or model slug contains the text (`--model kling-video`, `--model soul`).
 
 Without `--no-wait`, `higgs gen` polls the Request (2 s backing off to 10 s, waiting out a full queue and
 retrying transient errors) and downloads every Generation and Artifact into `generations/YYYY-MM-DD/` as
