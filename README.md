@@ -38,6 +38,10 @@ higgs models list --mode i2v     # Models with their Family, Modes, quality tier
 higgs models show kling-3.0      # every Endpoint of a Model: parameters, allowed values, prompt limits
 higgs models sync                # refresh the catalog from the live docs into ~/.config/higgs/catalog.json
 cd ~/hf-projects/demo
+higgs video t2v --model kling-3.0 --quality pro --duration 5 --aspect 16:9 --prompt "Waves at dusk"
+                                 # picks the Endpoint from Model + Mode (+ tier) and maps the flags onto it
+higgs video i2v -m kling-o3 -q pro --image inputs/first.jpg --end-image @hero --prompt-file prompts/turn.md
+higgs video t2v -m wan-2.7 --prompt "Waves at dusk" --count 3 --seed 7   # 3 Requests, seeds 7, 8, 9
 higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=4
                                  # validates, submits a Request, waits for it and downloads the Generations
 higgs gen bytedance/seedance-2.0/text-to-video -p prompt="Waves at dusk" --name sunset-beach \
@@ -69,6 +73,58 @@ slug. The model slug and Mode come from the catalog, with the quality tier when 
 (`kling-video/v3.0/pro/image-to-video` → `kling-3-0-pro_i2v`); for an Endpoint the catalog lacks they come
 from the Endpoint id (see DESIGN.md §5). A failed, nsfw
 or canceled Request ends with an error and downloads nothing.
+
+### Video: `higgs video t2v|i2v`
+
+`higgs video <mode>` is `higgs gen` with friendly flags: `--model` (slug or name, as `higgs models list`
+shows) and the Mode pick the one Endpoint, and the common flags are mapped onto that Endpoint's own
+parameters, so the same flag means the same thing for every Model:
+
+| Flag | Parameter (first one the Endpoint has) |
+|---|---|
+| `--prompt` / `--prompt-file` | `prompt` |
+| `--image` (i2v) | `image_url`, `first_frame_url`, `start_image_url` |
+| `--end-image` (i2v) | `end_image_url`, `last_image_url`, `last_frame_url`, `tail_image_url` |
+| `--duration` | `duration` (as the schema's type: `5`, or `"5"` where it is a string) |
+| `--aspect` | `aspect_ratio` |
+| `--quality` | the quality tier (`std`/`pro`/`4k`/`fast`) for Kling 2.5 Turbo, Kling 3.0 and LTX-2.5; otherwise `mode` (Kling O3/Omni), `resolution` (`720p`, `1080p`, ...) |
+| `--seed` | `seed` |
+
+Allowed values match case-insensitively (`--quality 2k` sends MiniMax H3's `"2K"`). A flag the Endpoint has no
+parameter for fails before anything is sent (`--end-image is not supported by kling-2.6 i2v`, code
+`unsupported_flag`); anything else goes in `-p key=value` as with `higgs gen`, applied last so it wins over the
+flags. `--image`/`--end-image` take a file in the Project or a Reference (`@hero`), uploaded like any Input.
+`--prompt-file prompts/x.md` reads the prompt from a file inside the Project (relative to the current
+directory). The body is then validated, priced, confirmed and submitted exactly like `higgs gen`'s, and
+`--name`, `--no-wait`, `--yes`, `--no-input`, `--json` and `--project` work the same way.
+
+What is not given comes from `project.toml`; `[defaults.video]` wins over the shared `[defaults]` (which
+`higgs image` will share). A default the Endpoint does not accept is skipped, not an error (e.g. `aspect` for
+Hailuo 2.3, which has no aspect ratio, or `duration = 5` for a Model of 6 or 10 seconds), and a default Model
+without the Mode counts as no default:
+
+```toml
+[defaults]
+model = "kling-3.0"   # --model
+quality = "pro"       # --quality: a tier, or a resolution/mode value
+duration = 5          # --duration
+aspect = "16:9"       # --aspect
+
+[defaults.video]
+model = "seedance-2.0"
+```
+
+Still missing a Model, a quality tier (for a Model with tiers), the prompt (t2v), the start image (i2v) or a
+parameter the Endpoint requires (LTX-2.5's `duration`)? It is asked for, with the allowed choices; with
+`--no-input` or `--json` the command fails at once with `missing_param` (`Missing --duration`).
+
+`--count N` submits N separate Requests with the same parameters: every one is estimated, their total is
+confirmed once (`Submit 3 Requests for $0.282?`), and they get consecutive `vNN` (`v04`, `v05`, `v06`). Where
+the Endpoint has a `seed`, each Request gets its own: `--seed S` gives S, S+1, S+2, ..., otherwise distinct
+random seeds in the seed's range (a single Request without `--seed` sends none). A Model's own `batch_size`
+stays an ordinary `-p` parameter. Without `--no-wait` every Request is waited for and downloaded; one that
+fails fails the command after the others are downloaded. `--json` always prints a list, one object per Request
+(`request_id`, `path`, `record`, `generations` once downloaded, `warnings`), even for one Request.
 
 `higgs pick <generation>` takes a path or just the file name (looked up under `generations/`) and copies
 the Generation with its `.json` and all its Artifacts into `final/` under the same names, as real copies

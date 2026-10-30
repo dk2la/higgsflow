@@ -1,10 +1,21 @@
 """The convenience layer behind `higgs video ...` (and `higgs image ...`): common flags → one Endpoint's Requests.
 
 A convenience command declares its options with the `...Opt` aliases below, collects the
-common flags into a dict keyed like `hfcore.flags.FLAGS` and calls `generate` with its
-Mode. `generate` resolves Model + Mode (+ tier) to one Endpoint, maps the flags onto the
-Endpoint's parameters, adds `-p` parameters on top, and hands the body to
-`hfcli.pipeline.run_requests`.
+common flags into a dict keyed like `hfcore.flags.FLAGS` (only the flags it offers; a
+flag left out of the dict is never asked for) and calls `generate` with its kind
+(`video`, `image`: the `[defaults.<kind>]` table) and Mode. `generate`:
+
+1. reads `--prompt-file` into the `prompt` flag;
+2. resolves Model + Mode (+ tier) to one Endpoint: `--model`, else the Project's default,
+   else asked for; for a Model with quality tiers in the Mode, `--quality` is the tier;
+3. fills the flags not given from `project.toml` defaults the Endpoint accepts, then asks
+   for those still required (`hfcore.flags.missing_flags`);
+4. maps the flags onto the Endpoint's parameters, puts `-p` parameters on top, makes one
+   body per Request (`--count`, `hfcore.flags.vary_seeds`) and hands them to
+   `hfcli.pipeline.run_requests`.
+
+A new flag is an entry in `hfcore.flags.FLAGS`, an `...Opt` alias here and an option on
+the commands that offer it.
 """
 
 from __future__ import annotations

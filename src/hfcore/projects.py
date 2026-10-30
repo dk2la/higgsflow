@@ -37,7 +37,10 @@ class ProjectConfig(BaseModel):
     name = "demo"
     budget = 20.0      # optional, USD: Spend over it warns, never blocks
 
-    [defaults]         # values for flags that were not given
+    [defaults]         # values for flags that were not given (`hfcore.flags.DEFAULT_KEYS`)
+    model = "kling-3.0"
+
+    [defaults.video]   # only for `higgs video`, over [defaults]
     ```
 
     Unknown keys are kept, so a file written by a newer version still loads.
