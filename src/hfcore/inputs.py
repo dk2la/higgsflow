@@ -132,10 +132,25 @@ def _replace(value: Any, param: str, replacements: dict[str, str]) -> Any:
     return value
 
 
+def is_input(value: str, cwd: Path) -> bool:
+    """Whether `resolve_inputs` will treat this param value as a local file (or Reference) to upload.
+
+    A Reference counts without being resolved; `resolve_inputs` reports a missing one.
+    """
+    if references.unescape(value) is not None:
+        return False
+    return references.reference_name(value) is not None or _file_path(value, cwd) is not None
+
+
 def _locate(value: str, cwd: Path, project: Project) -> Path | None:
-    """The local file a param value names, or None when it is a plain string."""
+    """The local file a param value names (a Reference or a path), or None when it is a plain string."""
     if (name := references.reference_name(value)) is not None:
         return references.resolve_reference(project, name)
+    return _file_path(value, cwd)
+
+
+def _file_path(value: str, cwd: Path) -> Path | None:
+    """The local file a path-like param value names, or None when it is a plain string."""
     if "://" in value or "\n" in value:
         return None
     try:

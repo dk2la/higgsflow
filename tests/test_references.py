@@ -207,6 +207,22 @@ def test_a_saved_generation_is_used_as_at_name_in_the_next_request(higgs, projec
     assert (reference["source"], reference["path"]) == ("@fox", "references/fox.png")
 
 
+def test_at_name_satisfies_a_url_parameter_when_validated_against_the_catalog(higgs, project, api_key, respx_mock):
+    # Ads Studio: image_urls items must match ^https?:// — true once the Reference is uploaded.
+    write(project / "references" / "hero.png", PNG)
+    mock_upload(respx_mock)
+    submit = respx_mock.post("https://api.higgsfield.ai/higgsfield/ads-studio/v1.0").mock(
+        return_value=httpx.Response(200, json=SUBMITTED)
+    )
+
+    result = higgs(
+        "gen", "higgsfield/ads-studio/v1.0", "-p", "prompt=a sneaker ad", "-p", 'image_urls=["@hero"]', "--no-wait", "--json"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(submit.calls.last.request.content)["image_urls"] == [PUBLIC_URL]
+
+
 def test_an_ambiguous_at_name_fails_listing_the_matches_and_submits_nothing(higgs, project, api_key, respx_mock):
     write(project / "references" / "hero.png", PNG)
     write(project / "references" / "hero.mp4", MP4)  # put by hand; `ref save` never allows this
