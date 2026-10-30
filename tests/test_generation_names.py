@@ -1,11 +1,13 @@
 """Generation names, `vNN`, `-N` suffixes and Artifacts (DESIGN.md §5)."""
 
 import json
+import time
 from datetime import timedelta
 from itertools import count
 from typing import Any
 
 import httpx
+import pytest
 
 SOUL = "higgsfield-ai/soul/v2/standard"
 KLING_I2V = "kling-video/v3.0/pro/image-to-video"
@@ -70,6 +72,26 @@ def test_an_endpoint_outside_the_catalog_is_named_from_its_path(higgs, project, 
 
     assert names(output) == ["20261030-1200_kling-video-v4-0-pro_i2v_a-cat_v01.png"]
     assert output["record"]["naming"]["model_slug"] == "kling-video-v4-0-pro"
+
+
+@pytest.fixture
+def moscow(monkeypatch):
+    """Local time is Europe/Moscow (UTC+3), as the host wrapper passes it in `TZ`."""
+    monkeypatch.setenv("TZ", "Europe/Moscow")
+    time.tzset()
+    yield
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+
+
+def test_names_and_the_day_folder_are_in_local_time(higgs, project, api_key, respx_mock, clock, moscow):
+    # 22:30 UTC on Oct 30 is 01:30 on Oct 31 in Moscow.
+    clock.current = clock.current.replace(hour=22, minute=30)
+
+    output = generate(higgs, respx_mock, "-p", "prompt=Night city")
+
+    assert names(output) == ["20261031-0130_soul-v2_t2i_night-city_v01.png"]
+    assert (project / "generations" / "2026-10-31" / names(output)[0]).is_file()
 
 
 def test_the_slug_is_fixed_on_the_record_at_submit(higgs, project, api_key, respx_mock):

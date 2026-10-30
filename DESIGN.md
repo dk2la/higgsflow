@@ -143,7 +143,10 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
   With several Generations the artifacts take the Request's name without `-N` and every Generation's
   `.json` lists them; a Request that returns artifacts only (e.g. a 3D scene) has them as its Generations.
 - The model slug, Mode, slug and `vNN` are fixed when the Request is submitted and stored in its record
-  (`naming`), so a later `sync`/`download` gives the same names. Timestamps are in local time.
+  (`naming`), so a later `sync`/`download` gives the same names. Timestamps (and the `YYYY-MM-DD` folder)
+  are in local time: the container runs in UTC, so `bin/higgs` passes the host's time zone as `TZ=<IANA
+  name>` (host `$TZ`, else the `/etc/localtime` symlink — on macOS `/var/db/timezone/zoneinfo/Europe/Moscow`
+  → `Europe/Moscow` — else `/etc/timezone`, else `UTC`), and the image installs `tzdata` so the name resolves.
 - For an Endpoint the effective catalog does not have (a raw `higgs gen --no-validate` to a Model not in
   the docs yet) they come from the Endpoint id: the first path segment that names a
   Mode is the Mode (`text-to-video` → `t2v`, `image-to-video`/`first-last-frame` → `i2v`,

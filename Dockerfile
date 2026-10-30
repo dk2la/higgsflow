@@ -7,6 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Time zone data, so the host's TZ (passed by bin/higgs) gives local times in Generation
+# names; the slim base image has it today, but does not promise it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies first, keyed only on pyproject.toml, so a source change does not
 # reinstall them. Editable install: the dev script mounts the repo over /app and
 # runs against the live source without rebuilding.

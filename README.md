@@ -25,6 +25,8 @@ The wrapper mounts, at identical absolute paths:
 - `~/.config/higgs/` (credentials, config, user catalog), read-write.
 
 Only the projects root is visible inside the container, so files you pass to `higgs` must live in a Project.
+The wrapper also passes the host's time zone (`TZ`, from `$TZ` or the `/etc/localtime` symlink, else UTC),
+so the times in Generation names are local.
 
 ## Usage
 
