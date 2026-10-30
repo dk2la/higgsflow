@@ -9,8 +9,8 @@ Endpoint has is an `unsupported_flag` error.
 
 To support a new flag (`--video`, `--audio`, `--ref`, ...), add a `Flag` here and an
 option to the command; to support a new parameter spelling, add it to that flag's
-`params`. `--quality` is special: for a Model with quality tiers in the Mode it picks the
-tier (`select_endpoint`), otherwise it maps like any other flag.
+`params`. `--quality` is special: for a Model with quality tiers in the Mode
+(`Catalog.tiers`) it picks the tier and is not mapped; otherwise it maps like any other flag.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from hfcore.catalog import Catalog, Endpoint, Parameter
+from hfcore.catalog import Endpoint, Parameter
 from hfcore.errors import HiggsError
 
 
@@ -46,17 +46,9 @@ FLAGS: dict[str, Flag] = {
 }
 
 
-def select_endpoint(catalog: Catalog, model: str, mode: str, quality: str | None) -> tuple[Endpoint, bool]:
-    """The Endpoint for Model + Mode, and whether `quality` was used as its quality tier.
-
-    For a Model with tiers in the Mode, `quality` picks the tier (`unknown_tier` when it is
-    missing or not one of them); otherwise it is left for `map_flags`.
-    """
-    tiers = catalog.tiers(model, mode)
-    if not tiers:
-        return catalog.resolve(model, mode), False
-    tier = quality.lower() if quality is not None else None
-    return catalog.resolve(model, mode, tier), True
+# Flags a Mode cannot do without, whatever the Endpoint's schema says (Kling 3.0 t2v has an
+# optional prompt, but a text-to-video Request without one makes no sense).
+MODE_REQUIRED: dict[str, tuple[str, ...]] = {"t2v": ("prompt",), "i2v": ("image",)}
 
 
 def map_flags(endpoint: Endpoint, flags: dict[str, Any]) -> dict[str, Any]:
@@ -74,6 +66,32 @@ def map_flags(endpoint: Endpoint, flags: dict[str, Any]) -> dict[str, Any]:
             raise unsupported(endpoint, key)
         params[parameter.name] = convert(parameter, value)
     return params
+
+
+def missing_flags(endpoint: Endpoint, flags: dict[str, Any], params: dict[str, Any]) -> list[str]:
+    """The keys of `flags` that are None but needed: required by the Mode or by the Endpoint's schema.
+
+    Only flags present in `flags` (the ones the command offers) count, and a parameter
+    already given in `params` (`-p`) satisfies its flag. In `FLAGS` order.
+    """
+    found = []
+    for key in FLAGS:
+        if key not in flags or flags[key] is not None:
+            continue
+        parameter = flag_parameter(endpoint, key)
+        if parameter is not None and parameter.name in params:
+            continue
+        if key in MODE_REQUIRED.get(endpoint.mode, ()) or (parameter is not None and parameter.required):
+            found.append(key)
+    return found
+
+
+def choices(endpoint: Endpoint, key: str) -> list[str] | None:
+    """The values flag `key` accepts on the Endpoint, when its parameter lists them."""
+    parameter = flag_parameter(endpoint, key)
+    if parameter is None or parameter.enum is None:
+        return None
+    return [str(value) for value in parameter.enum]
 
 
 def flag_parameter(endpoint: Endpoint, key: str, value: Any = None) -> Parameter | None:

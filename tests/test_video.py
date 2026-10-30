@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import pytest
+import respx
 
 from hfcore.catalog.loader import load_baked_in
 
@@ -36,7 +37,8 @@ def mock_submit(respx_mock, endpoint: str):
 
 
 def body(route, index: int = -1) -> dict[str, Any]:
-    return json.loads(route.calls[index].request.content)
+    sent: dict[str, Any] = json.loads(route.calls[index].request.content)
+    return sent
 
 
 def video(higgs, *args: str, input: str | None = None):
@@ -79,7 +81,7 @@ JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 32
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
 
-def mock_uploads(respx_mock):
+def mock_uploads(respx_mock: respx.MockRouter) -> None:
     """Every upload succeeds; the n-th gets the public URL https://cdn.example.com/upload-n."""
     counter = itertools.count(1)
     respx_mock.put(STORAGE_URL).mock(return_value=httpx.Response(200))
@@ -182,6 +184,64 @@ def test_every_t2v_and_i2v_endpoint_is_reachable_with_the_common_flags(
     if endpoint.mode == "i2v":
         [image_param] = [name for name, value in sent.items() if value == "https://cdn.example.com/upload-1"]
         assert image_param in {parameter.name for parameter in endpoint.parameters}
+
+
+def test_a_missing_model_and_tier_are_asked_for_with_their_choices(higgs, project, api_key, respx_mock, estimate):
+    route = mock_submit(respx_mock, "kling-video/v3.0/4k/text-to-video")
+
+    result = video(higgs, "t2v", "--prompt", "Waves at dusk", "--no-wait", "--yes", input="kling-3.0\n4k\n")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Waves at dusk"}
+    assert "seedance-2.0" in result.output  # the Models with t2v are offered
+    assert "std, pro, 4k" in result.output  # and then Kling 3.0's tiers
+
+
+def test_a_missing_prompt_and_required_duration_are_asked_for(higgs, project, api_key, respx_mock, estimate):
+    # LTX-2.5 requires a duration of 6, 8 or 10 seconds.
+    route = mock_submit(respx_mock, "lightricks/ltx-2.5/text-to-video/fast")
+
+    result = video(
+        higgs, "t2v", "--model", "ltx-2.5", "--quality", "fast", "--no-wait", "--yes", input="Waves at dusk\n8\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Waves at dusk", "duration": 8}
+    assert "6, 8, 10" in result.output
+
+
+def test_a_missing_image_is_asked_for(higgs, project, api_key, respx_mock, estimate, images):
+    mock_uploads(respx_mock)
+    route = mock_submit(respx_mock, "bytedance/seedance-2.0/image-to-video")
+
+    result = video(higgs, "i2v", "--model", "seedance-2.0", "--no-wait", "--yes", input="inputs/first.jpg\n")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"image_url": "https://cdn.example.com/upload-1"}
+
+
+@pytest.mark.parametrize(
+    ("args", "flag"),
+    [
+        (("t2v", "--prompt", "Waves"), "--model"),
+        (("t2v", "--model", "kling-3.0", "--prompt", "Waves"), "--quality"),
+        (("t2v", "--model", "seedance-2.0"), "--prompt"),
+        (("t2v", "--model", "ltx-2.5", "--quality", "pro", "--prompt", "Waves"), "--duration"),
+        (("i2v", "--model", "seedance-2.0", "--prompt", "Waves"), "--image"),
+    ],
+)
+@pytest.mark.parametrize("no_input", ["--json", "--no-input"])
+def test_without_input_a_missing_parameter_fails_at_once(higgs, project, api_key, respx_mock, args, flag, no_input):
+    result = video(higgs, *args, no_input, "--yes")
+
+    assert result.exit_code == 1
+    if no_input == "--json":
+        error = json.loads(result.output)["error"]
+        assert error["code"] == "missing_param"
+        assert error["message"] == f"Missing {flag}"
+    else:
+        assert f"Missing {flag}" in result.output
+    assert not respx_mock.calls
 
 
 def test_a_flag_the_endpoint_has_no_parameter_for_fails_before_any_call(higgs, project, api_key, respx_mock, images):

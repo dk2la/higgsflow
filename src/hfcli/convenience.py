@@ -14,9 +14,9 @@ from typing import Annotated, Any
 import typer
 
 from hfcore import flags as common_flags
-from hfcore.catalog import load_catalog
+from hfcore.catalog import Catalog, Endpoint, load_catalog
 from hfcore.config import config_dir
-from hfcli.output import print_json
+from hfcli.output import ask, print_json
 from hfcli.params import parse_params
 from hfcli.pipeline import echo_result, result_json, run_requests
 from hfcli.projects import current_project
@@ -60,12 +60,14 @@ def generate(
 ) -> None:
     """Resolve the Endpoint, build the body from the flags and submit it; print the Requests."""
     target = current_project(project)
-    catalog = load_catalog(config_dir())
-    assert model is not None
-    endpoint, quality_is_tier = common_flags.select_endpoint(catalog, model, mode, flags.get("quality"))
-    if quality_is_tier:
-        flags = {**flags, "quality": None}
-    body = {**common_flags.map_flags(endpoint, flags), **parse_params(params or [])}
+    extra = parse_params(params or [])
+    endpoint, flags = _endpoint(ctx, load_catalog(config_dir()), mode, model, flags)
+    for key in common_flags.missing_flags(endpoint, flags, extra):
+        flag = common_flags.FLAGS[key]
+        options = common_flags.choices(endpoint, key)
+        question = flag.option.removeprefix("--").replace("-", " ").capitalize()
+        flags[key] = ask(ctx, question, flag=flag.option, choices=options)
+    body = {**common_flags.map_flags(endpoint, flags), **extra}
     batch = run_requests(ctx, target, endpoint.id, [body], name=name, yes=yes, no_wait=no_wait, quiet=as_json)
     if as_json:
         batch.raise_unfinished()
@@ -74,3 +76,25 @@ def generate(
     for result in batch.results:
         echo_result(result, target)
     batch.raise_unfinished()
+
+
+def _endpoint(
+    ctx: typer.Context, catalog: Catalog, mode: str, model: str | None, flags: dict[str, Any]
+) -> tuple[Endpoint, dict[str, Any]]:
+    """The Endpoint for the Model (asked for when missing) and Mode, and the flags left to map.
+
+    For a Model with quality tiers in the Mode, `--quality` (asked for when missing) is the
+    tier, so it is taken out of the flags.
+    """
+    if model is None:
+        offered = [summary.slug for summary in catalog.summaries(mode=mode)]
+        model = ask(ctx, f"Model for {mode}", flag="--model", choices=offered)
+    slug = catalog.model(model).slug
+    flags = dict(flags)
+    tiers = catalog.tiers(slug, mode)
+    if not tiers:
+        return catalog.resolve(slug, mode), flags
+    tier = flags.pop("quality", None)
+    if tier is None:
+        tier = ask(ctx, f"Quality tier of {slug} {mode}", flag="--quality", choices=tiers)
+    return catalog.resolve(slug, mode, tier.lower()), flags
