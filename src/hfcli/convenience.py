@@ -9,13 +9,16 @@ Endpoint's parameters, adds `-p` parameters on top, and hands the body to
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
 from hfcore import flags as common_flags
+from hfcore import prompts
 from hfcore.catalog import Catalog, Endpoint, load_catalog
 from hfcore.config import config_dir
+from hfcore.errors import HiggsError
 from hfcore.projects import load_config
 from hfcli.output import ask, print_json
 from hfcli.params import parse_params
@@ -36,6 +39,10 @@ EndImageOpt = Annotated[
     str | None, typer.Option("--end-image", help="End image: a file in the Project or a Reference (@name).")
 ]
 PromptOpt = Annotated[str | None, typer.Option("--prompt", help="The prompt.")]
+PromptFileOpt = Annotated[
+    str | None,
+    typer.Option("--prompt-file", help="Read the prompt from a file in the Project, e.g. prompts/scene.md."),
+]
 NameOpt = Annotated[
     str | None, typer.Option("--name", help="Slug of the Generation file names (default: first words of the prompt).")
 ]
@@ -53,6 +60,7 @@ def generate(
     mode: str,
     model: str | None,
     flags: dict[str, Any],
+    prompt_file: str | None,
     params: list[str] | None,
     name: str | None,
     project: str | None,
@@ -63,6 +71,12 @@ def generate(
     """Resolve the Endpoint, build the body from the flags and submit it; print the Requests."""
     target = current_project(project)
     extra = parse_params(params or [])
+    if prompt_file is not None:
+        if flags.get("prompt") is not None:
+            raise HiggsError(
+                "--prompt and --prompt-file cannot be used together", hint="Pass one of them.", code="conflicting_flags"
+            )
+        flags = {**flags, "prompt": prompts.read_prompt_file(target, prompt_file, cwd=Path.cwd())}
     defaults = common_flags.project_defaults(load_config(target).defaults, kind)
     endpoint, flags = _endpoint(ctx, load_catalog(config_dir()), mode, model, flags, defaults)
     flags = common_flags.fill_defaults(endpoint, flags, defaults)

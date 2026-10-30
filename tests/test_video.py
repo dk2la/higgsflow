@@ -293,6 +293,42 @@ def test_video_defaults_beat_the_shared_ones(higgs, project, api_key, respx_mock
     assert json.loads(result.output)["error"]["code"] == "missing_param"
 
 
+def test_prompt_file_reads_the_prompt_relative_to_the_current_directory(
+    higgs, project, api_key, respx_mock, estimate, monkeypatch
+):
+    (project / "prompts" / "dusk.md").write_text("Waves at dusk,\nslow dolly in.\n")
+    monkeypatch.chdir(project / "prompts")
+    route = mock_submit(respx_mock, "bytedance/seedance-2.0/text-to-video")
+
+    result = video(
+        higgs, "t2v", "--model", "seedance-2.0", "--prompt-file", "dusk.md", "--name", "sunset",
+        "--no-wait", "--json", "--yes",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Waves at dusk,\nslow dolly in."}
+    assert json.loads(result.output)[0]["record"]["naming"]["slug"] == "sunset"
+
+
+@pytest.mark.parametrize(
+    ("args", "code"),
+    [
+        (("--prompt-file", "prompts/missing.md"), "prompt_file_not_found"),
+        (("--prompt-file", "../elsewhere.md"), "prompt_file_outside_project"),
+        (("--prompt-file", "prompts/dusk.md", "--prompt", "Waves"), "conflicting_flags"),
+    ],
+)
+def test_a_prompt_file_that_cannot_be_used_fails_before_any_call(higgs, project, api_key, respx_mock, args, code):
+    (project / "prompts" / "dusk.md").write_text("Waves at dusk\n")
+    (project.parent / "elsewhere.md").write_text("Waves at dusk\n")
+
+    result = video(higgs, "t2v", "--model", "seedance-2.0", *args, "--json", "--yes")
+
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["code"] == code
+    assert not respx_mock.calls
+
+
 def test_a_flag_the_endpoint_has_no_parameter_for_fails_before_any_call(higgs, project, api_key, respx_mock, images):
     result = video(
         higgs, "i2v", "--model", "kling-2.6", "--prompt", "She turns around",
