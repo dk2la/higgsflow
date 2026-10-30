@@ -10,6 +10,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from hfcore.catalog import Endpoint, ModelSummary, Parameter, Price, PromptConstraints, load_catalog
+from hfcore.catalog.sync import sync_catalog
 from hfcore.config import config_dir
 from hfcli.output import JsonOpt, console, print_json
 
@@ -71,6 +72,27 @@ def show_model(
     )
     for endpoint in endpoints:
         _print_endpoint(endpoint)
+
+
+@app.command("sync")
+def sync_models(as_json: JsonOpt = False) -> None:
+    """Refresh the catalog from the live docs into the config dir; it then replaces the shipped one."""
+    result = sync_catalog(config_dir())
+    if as_json:
+        print_json(result)
+        return
+    console.print(f"Wrote {result.path}: {result.models} models, {result.endpoints} endpoints", highlight=False)
+    for label, ids in (("Added", result.added), ("Removed", result.removed)):
+        if ids:
+            console.print(f"{label} {_endpoints_count(len(ids))}: " + ", ".join(ids), highlight=False)
+    if not result.added and not result.removed:
+        console.print("No endpoints added or removed.")
+    for note in result.notes:
+        console.print(f"[dim]Note: {escape(note)}[/]", highlight=False)
+
+
+def _endpoints_count(count: int) -> str:
+    return f"{count} endpoint" if count == 1 else f"{count} endpoints"
 
 
 def _print_endpoint(endpoint: Endpoint) -> None:

@@ -92,6 +92,7 @@ def test_a_local_model_shows_its_parameters_and_prompt_constraints(higgs, config
     [endpoint] = json.loads(result.output)["endpoints"]
     assert endpoint["id"] == "kling-video/v4.0/pro/image-to-video"
     assert endpoint["mode"] == "i2v"
+    assert endpoint["source"] == "local"
     params = {p["name"]: p for p in endpoint["parameters"]}
     assert list(params) == ["image_url", "prompt", "duration", "sound"]
     assert params["duration"]["minimum"] == 3 and params["duration"]["maximum"] == 15

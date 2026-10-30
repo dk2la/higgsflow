@@ -168,6 +168,7 @@ def _endpoint(entry: _LocalEndpoint) -> Endpoint:
         price=Price(**entry.price.model_dump()) if entry.price else None,
         notes=entry.notes,
         input_schema=_input_schema(entry.parameters),
+        source="local",
     )
 
 

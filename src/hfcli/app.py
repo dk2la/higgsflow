@@ -2,26 +2,42 @@
 
 from __future__ import annotations
 
+import warnings
+from collections.abc import Callable
 from typing import Annotated, Any
 
 import typer
 from typer.core import TyperGroup
 
 from hfcore import __version__
-from hfcore.errors import HiggsError
+from hfcore.errors import HiggsError, HiggsWarning
 from hfcli import auth, gen, models, projects, references, request_actions
-from hfcli.output import JsonOpt, json_mode, print_json, render_error
+from hfcli.output import JsonOpt, json_mode, print_json, render_error, render_warning
 
 
 class _HiggsGroup(TyperGroup):
-    """Root group that turns `HiggsError` from any command into text/JSON + exit 1."""
+    """Root group that turns `HiggsError` from any command into text/JSON + exit 1,
+    and prints each `HiggsWarning` to stderr as it happens."""
 
     def invoke(self, ctx: typer.Context) -> Any:  # type: ignore[override]
-        try:
-            return super().invoke(ctx)
-        except HiggsError as error:
-            render_error(error, as_json=json_mode(ctx))
-            raise typer.Exit(1) from None
+        with warnings.catch_warnings():  # restores the filters and showwarning afterwards
+            warnings.simplefilter("always", HiggsWarning)
+            warnings.showwarning = _show_warning(warnings.showwarning)
+            try:
+                return super().invoke(ctx)
+            except HiggsError as error:
+                render_error(error, as_json=json_mode(ctx))
+                raise typer.Exit(1) from None
+
+
+def _show_warning(fallback: Callable[..., None]) -> Callable[..., None]:
+    def show(message: Warning | str, category: type[Warning], *args: Any, **kwargs: Any) -> None:
+        if issubclass(category, HiggsWarning):
+            render_warning(str(message))
+        else:
+            fallback(message, category, *args, **kwargs)
+
+    return show
 
 
 app = typer.Typer(
