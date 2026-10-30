@@ -49,7 +49,7 @@ FLAGS: dict[str, Flag] = {
 
 # Flags a Mode cannot do without, whatever the Endpoint's schema says (Kling 3.0 t2v has an
 # optional prompt, but a text-to-video Request without one makes no sense).
-MODE_REQUIRED: dict[str, tuple[str, ...]] = {"t2v": ("prompt",), "i2v": ("image",)}
+MODE_REQUIRED: dict[str, tuple[str, ...]] = {"t2v": ("prompt",), "i2v": ("image",), "t2i": ("prompt",)}
 
 # The keys of `project.toml` `[defaults]` (and `[defaults.video]`, `[defaults.image]`) that
 # fill flags that were not given; `model` is the `--model` default.
