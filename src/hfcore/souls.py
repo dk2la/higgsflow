@@ -36,8 +36,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from hfcore import clock, config, inputs
+from hfcore import clock, config, flags, inputs
 from hfcore.api import ApiClient, ApiError, CustomReference
+from hfcore.catalog import Endpoint
 from hfcore.errors import HiggsError
 from hfcore.lifecycle import POLL_ERROR_ATTEMPTS, SUBMIT_ATTEMPTS, Backoff, retry_wait
 from hfcore.projects import Project
@@ -241,8 +242,7 @@ def wait_for_soul(client: ApiClient, soul: Soul, *, on_progress: SoulProgress | 
 
 def refresh_soul(client: ApiClient, name: str) -> Soul:
     """Ask the API for a registered Soul ID's training status once; `souls.toml` follows."""
-    soul = get_soul(name)
-    return record_status(soul, client.custom_reference(soul.id))
+    return refresh_status(client, get_soul(name))
 
 
 def get_soul(name: str) -> Soul:
@@ -256,6 +256,53 @@ def get_soul(name: str) -> Soul:
         f"Registered: {', '.join(others)}." if others else "None registered yet; train one with `higgs soul train`."
     )
     raise HiggsError(f"No Soul ID named {name} in {souls_path()}", hint=hint, code="soul_not_found")
+
+
+def soul_reference_id(endpoint: Endpoint, name: str, *, refresh: Callable[[Soul], Soul] | None = None) -> str:
+    """The `custom_reference_id` for `--soul <name>` on this Endpoint.
+
+    The Endpoint must take a Soul ID, the name must be registered, the Soul ID's version
+    must be the one the Endpoint's SOUL Model takes (`VERSIONS`) and its training must
+    have completed. A registered status that is not final yet may be stale (`soul train
+    --no-wait`), so it is first refreshed with `refresh` (an API call) when one is given.
+    """
+    if flags.flag_parameter(endpoint, "soul") is None:
+        raise flags.unsupported(endpoint, "soul")
+    wanted = next((version for version, model in VERSIONS.items() if model.endpoint == endpoint.id), None)
+    if wanted is None:
+        raise HiggsError(
+            f"higgs cannot tell which Soul ID version {endpoint.model} {endpoint.mode} takes",
+            hint=(
+                f"Known SOUL Models: {_version_models()}. To pass a Soul ID anyway, use "
+                "-p custom_reference_id=<id> (see `higgs soul list`)."
+            ),
+            code="soul_version_unknown",
+        )
+    soul = get_soul(name)
+    if soul.version != wanted:
+        own = VERSIONS.get(soul.version)
+        use = f"Use it with --model {own.model}, or train" if own is not None else "Train"
+        raise HiggsError(
+            f"Soul ID {name} is a {soul.version} Soul ID; {endpoint.model} takes {wanted} Soul IDs only",
+            hint=f"{use} a {wanted} one: higgs soul train <name> <images...> --version {wanted}.",
+            code="soul_version_mismatch",
+        )
+    if not soul.is_terminal and refresh is not None:
+        soul = refresh(soul)
+    if soul.status == "failed":
+        raise SoulTrainingFailed(soul)
+    if soul.status != "completed":
+        raise HiggsError(
+            f"Soul ID {name} is not trained yet ({soul.status})",
+            hint=f"Wait until `higgs soul status {name}` says completed.",
+            code="soul_not_ready",
+        )
+    return soul.id
+
+
+def refresh_status(client: ApiClient, soul: Soul) -> Soul:
+    """`soul` with its training status asked from the API once; `souls.toml` follows."""
+    return record_status(soul, client.custom_reference(soul.id))
 
 
 def record_status(soul: Soul, status: CustomReference) -> Soul:

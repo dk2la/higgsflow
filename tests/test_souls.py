@@ -327,6 +327,36 @@ def test_soul_list_shows_the_registered_soul_ids_without_calling_the_api(
     assert "alice" in text.output and "cinema" in text.output and OTHER_ID in text.output
 
 
+def submitted(request_id: str) -> httpx.Response:
+    return httpx.Response(200, json={"status": "queued", "request_id": request_id})
+
+
+def body(route: respx.Route) -> Any:
+    return json.loads(route.calls.last.request.content)
+
+
+@pytest.mark.parametrize(
+    ("model", "version", "endpoint"),
+    [
+        ("soul", "v1", "higgsfield-ai/soul/standard"),
+        ("soul-v2", "v2", "higgsfield-ai/soul/v2/standard"),
+        ("soul-cinema", "cinema", "higgsfield-ai/soul/cinema"),
+    ],
+)
+def test_soul_passes_the_soul_id_as_custom_reference_id_to_the_matching_soul_model(
+    higgs, project, photos, api_key, respx_mock, estimate, model, version, endpoint
+):
+    assert train(higgs, respx_mock, "alice", version=version).exit_code == 0
+    route = respx_mock.post(f"{API}/{endpoint}").mock(return_value=submitted("req-1"))
+
+    result = higgs(
+        "image", "t2i", "--model", model, "--prompt", "Alice on a beach", "--soul", "alice", "--no-wait", "--json", "--yes"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Alice on a beach", "custom_reference_id": SOUL_ID}
+
+
 def test_soul_list_without_any_soul_ids_says_how_to_train_one(higgs):
     result = higgs("soul", "list")
 

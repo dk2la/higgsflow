@@ -53,6 +53,8 @@ FLAGS: dict[str, Flag] = {
         # `higgs image`'s repeatable `--image`: the input/reference images (a list). Kept apart from
         # video's `image` (the start frame); a single-image parameter takes a one-item list.
         Flag("images", "--image", ("image_urls", "image_url", "image_reference_url")),
+        # `--soul <name>`: the name is swapped for the Soul ID's id (`hfcore.souls.soul_reference_id`) first.
+        Flag("soul", "--soul", ("custom_reference_id",)),
     )
 }
 
