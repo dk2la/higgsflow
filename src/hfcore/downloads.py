@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from hfcore import clock, naming
 from hfcore.api import ApiClient, RequestStatus
+from hfcore.inputs import Input
 from hfcore.projects import Project
 from hfcore.requests import RequestRecord, new_naming, save_request
 
@@ -55,7 +56,7 @@ class GenerationMetadata(BaseModel):
     params: dict[str, Any]
     prompt: str | None
     # Inputs/References uploaded for the Request, as recorded on it (if any).
-    inputs: list[Any]
+    inputs: list[Input]
     # Exact price from `/estimate`, if it was asked for.
     price_usd: str | None
     output_key: str
@@ -104,7 +105,7 @@ def download_request(
     for output, name in zip([*generations, *artifacts], [*names, *artifact_names], strict=True):
         client.download(output.url, folder / name)
 
-    now = clock.current().now()
+    now = clock.now()
     entries = [
         ArtifactEntry(key=artifact.key, file=name, url=artifact.url)
         for artifact, name in zip(artifacts, artifact_names, strict=True)
@@ -118,7 +119,7 @@ def download_request(
             **record.naming.model_dump(),
             params=record.params,
             prompt=record.prompt,
-            inputs=list((record.model_extra or {}).get("inputs") or []),
+            inputs=record.inputs,
             price_usd=record.estimate_usd,
             output_key=output.key,
             url=output.url,

@@ -22,6 +22,8 @@ BASE_URL = "https://api.higgsfield.ai"
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 # Output files can be large; only the gap between chunks is limited.
 DOWNLOAD_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+# A video Input may be up to a few hundred MiB; allow a slow uplink between chunks.
+UPLOAD_TIMEOUT = httpx.Timeout(300.0, connect=10.0)
 
 
 class ApiModel(BaseModel):
@@ -56,6 +58,27 @@ class RequestStatus(ApiModel):
 
     def outputs(self) -> dict[str, Any]:
         return dict(self.model_extra or {})
+
+
+class UploadTarget(ApiModel):
+    """Where to `PUT` one file (`POST /files/generate-upload-url`), and its URL afterwards."""
+
+    public_url: str
+    upload_url: str
+    content_type: str | None = None
+    upload_headers: dict[str, str] = {}
+
+
+class Deleted(ApiModel):
+    """The response of `DELETE /requests/{id}`."""
+
+    request_id: str
+    status: str = "deleted"
+
+
+_CANCEL_HINT = "Only a queued Request can be canceled; once it finishes, `higgs delete` removes its data."
+_DELETE_HINT = "Wait until it finishes, or stop a queued one with `higgs cancel` first."
+_NOT_FOUND_HINT = "It does not exist or belongs to another account; check the key in use."
 
 
 class ApiClient:
@@ -114,6 +137,76 @@ class ApiClient:
             tmp.unlink(missing_ok=True)
             raise
         os.replace(tmp, path)
+    def create_upload(self, content_type: str) -> UploadTarget:
+        """Get a presigned upload URL for one file (`POST /files/generate-upload-url`)."""
+        response = self._call("POST", "/files/generate-upload-url", json={"content_type": content_type})
+        return _parse(UploadTarget, response)
+
+    def put_file(self, target: UploadTarget, path: Path, *, content_type: str) -> None:
+        """Send a file to its presigned URL with the headers the API asked for.
+
+        A separate client on purpose: the API key must never reach the storage host.
+        The file is streamed with a `Content-Length` (presigned PUTs reject chunked bodies).
+        """
+        headers = target.upload_headers or {"Content-Type": content_type}
+        try:
+            with httpx.Client(timeout=UPLOAD_TIMEOUT) as http, path.open("rb") as file:
+                response = http.put(target.upload_url, content=file, headers=headers)
+        except httpx.TransportError as error:
+            raise HiggsError(
+                f"Cannot upload {path.name}: {error}",
+                hint="Check the network connection and try again.",
+                code="network_error",
+            ) from None
+        if response.is_error:
+            raise HiggsError(
+                f"Uploading {path.name} failed (HTTP {response.status_code}): {response.text.strip()[:200]}",
+                hint="Try again; a new upload URL is requested every time.",
+                code="upload_failed",
+            )
+
+    def cancel(self, request_id: str) -> None:
+        """Cancel a queued Request (`POST /requests/{id}/cancel`; 202 with an empty body)."""
+        self._call_on_request(
+            "POST",
+            request_id,
+            "/cancel",
+            # 400: processing has started.
+            {400: ("cannot_cancel", "is already in progress and cannot be canceled", _CANCEL_HINT)},
+        )
+
+    def delete(self, request_id: str) -> Deleted:
+        """Delete a finished Request's data on the API side (`DELETE /requests/{id}`)."""
+        response = self._call_on_request(
+            "DELETE",
+            request_id,
+            "",
+            {409: ("request_active", "is still queued or in progress and cannot be deleted yet", _DELETE_HINT)},
+        )
+        return _parse(Deleted, response)
+
+    def _call_on_request(
+        self, method: str, request_id: str, suffix: str, errors: dict[int, tuple[str, str, str]]
+    ) -> httpx.Response:
+        """A call on one Request (`/requests/{id}{suffix}`).
+
+        A 404 and the action's own statuses in `errors` (status → code, problem, hint)
+        become Request-specific errors instead of the generic mapping in `api_error`.
+        """
+        errors = {404: ("api_request_not_found", "is unknown to the API", _NOT_FOUND_HINT), **errors}
+        try:
+            return self._call(method, f"/requests/{request_id}{suffix}")
+        except ApiError as error:
+            if error.status not in errors:
+                raise
+            code, problem, hint = errors[error.status]
+            raise ApiError(
+                f"Request {request_id} {problem}",
+                status=error.status,
+                correlation_id=error.correlation_id,
+                hint=hint,
+                code=code,
+            ) from None
 
     def _call(
         self,

@@ -44,9 +44,9 @@ def test_vnn_counts_requests_with_the_same_slug_across_dates_and_models(higgs, p
     second = generate(higgs, respx_mock, "-p", "prompt=Drone shot", "--name", "sunset beach", endpoint=KLING_I2V)
     other = generate(higgs, respx_mock, "-p", "prompt=Night city")
 
-    assert names(first) == ["20261030-1412_higgsfield-ai-soul-v2-standard_gen_sunset-beach_v01.png"]
-    assert names(second) == ["20261031-1615_kling-video-v3-0-pro_i2v_sunset-beach_v02.png"]
-    assert names(other) == ["20261031-1615_higgsfield-ai-soul-v2-standard_gen_night-city_v01.png"]
+    assert names(first) == ["20261030-1200_higgsfield-ai-soul-v2-standard_gen_sunset-beach_v01.png"]
+    assert names(second) == ["20261031-1403_kling-video-v3-0-pro_i2v_sunset-beach_v02.png"]
+    assert names(other) == ["20261031-1403_higgsfield-ai-soul-v2-standard_gen_night-city_v01.png"]
     assert (project / "generations" / "2026-10-31" / names(second)[0]).is_file()
 
 
@@ -70,8 +70,8 @@ def test_several_generations_get_numbered_suffixes(higgs, project, api_key, resp
     output = generate(higgs, respx_mock, "-p", "prompt=a cat", "-p", "batch_size=2", outputs=images)
 
     assert names(output) == [
-        "20261030-1412_higgsfield-ai-soul-v2-standard_gen_a-cat_v01-1.jpg",
-        "20261030-1412_higgsfield-ai-soul-v2-standard_gen_a-cat_v01-2.jpg",
+        "20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-cat_v01-1.jpg",
+        "20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-cat_v01-2.jpg",
     ]
     day = project / "generations" / "2026-10-30"
     for name, url in zip(names(output), ["https://cdn.example.com/image-1.jpg", "https://cdn.example.com/image-2.jpg"]):
@@ -86,7 +86,7 @@ def test_audio_listed_in_both_audio_fields_is_one_generation(higgs, project, api
         higgs, respx_mock, "-p", "prompt=rain", outputs=audio, files={"https://cdn.example.com/audio.mp3": b"mp3"}
     )
 
-    assert names(output) == ["20261030-1412_higgsfield-ai-soul-v2-standard_gen_rain_v01.mp3"]
+    assert names(output) == ["20261030-1200_higgsfield-ai-soul-v2-standard_gen_rain_v01.mp3"]
 
 
 def test_artifacts_are_named_after_their_generation_and_listed_in_its_metadata(higgs, project, api_key, respx_mock):
@@ -99,7 +99,7 @@ def test_artifacts_are_named_after_their_generation_and_listed_in_its_metadata(h
 
     output = generate(higgs, respx_mock, "-p", "prompt=a dancer", outputs=outputs, files=files, endpoint=KLING_I2V)
 
-    base = "20261030-1412_kling-video-v3-0-pro_i2v_a-dancer_v01"
+    base = "20261030-1200_kling-video-v3-0-pro_i2v_a-dancer_v01"
     day = project / "generations" / "2026-10-30"
     assert names(output) == [f"{base}.mov"]
     # The `mov` Artifact clashes with the video's extension, so its key is appended.
@@ -119,7 +119,7 @@ def test_artifacts_are_named_after_their_generation_and_listed_in_its_metadata(h
 def test_without_a_prompt_or_name_the_slug_is_untitled(higgs, project, api_key, respx_mock):
     output = generate(higgs, respx_mock, "-p", "seed=42")
 
-    assert names(output) == ["20261030-1412_higgsfield-ai-soul-v2-standard_gen_untitled_v01.png"]
+    assert names(output) == ["20261030-1200_higgsfield-ai-soul-v2-standard_gen_untitled_v01.png"]
 
 
 def test_a_request_with_artifacts_only_has_them_as_its_generations(higgs, project, api_key, respx_mock):
@@ -129,7 +129,7 @@ def test_a_request_with_artifacts_only_has_them_as_its_generations(higgs, projec
         higgs, respx_mock, "-p", "prompt=a chair", outputs=outputs, files={"https://cdn.example.com/scene.ply": b"ply"}
     )
 
-    assert names(output) == ["20261030-1412_higgsfield-ai-soul-v2-standard_gen_a-chair_v01.ply"]
+    assert names(output) == ["20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-chair_v01.ply"]
     day = project / "generations" / "2026-10-30"
     assert json.loads((day / f"{names(output)[0]}.json").read_text())["output_key"] == "ply"
 
@@ -137,4 +137,4 @@ def test_a_request_with_artifacts_only_has_them_as_its_generations(higgs, projec
 def test_the_slug_keeps_letters_of_any_script(higgs, project, api_key, respx_mock):
     output = generate(higgs, respx_mock, "-p", "prompt=Закат у моря, кинематографично и тепло")
 
-    assert names(output) == ["20261030-1412_higgsfield-ai-soul-v2-standard_gen_закат-у-моря-кинематографично_v01.png"]
+    assert names(output) == ["20261030-1200_higgsfield-ai-soul-v2-standard_gen_закат-у-моря-кинематографично_v01.png"]

@@ -44,7 +44,7 @@ def test_a_completed_request_downloads_its_generation_with_metadata(higgs, proje
     )
 
     assert result.exit_code == 0, result.output
-    name = "20261030-1412_higgsfield-ai-soul-v2-standard_gen_editorial-portrait-in-soft_v01.jpg"
+    name = "20261030-1200_higgsfield-ai-soul-v2-standard_gen_editorial-portrait-in-soft_v01.jpg"
     generation = project / DAY / name
     assert generation.read_bytes() == b"jpeg-1"
     metadata = json.loads((project / DAY / f"{name}.json").read_text())
@@ -216,7 +216,7 @@ def test_a_completed_request_as_text_lists_the_downloaded_files(higgs, project, 
 
     assert result.exit_code == 0, result.output
     assert f"Completed Request {REQUEST_ID}" in result.output
-    assert f"{DAY}/20261030-1412_higgsfield-ai-soul-v2-standard_gen_a-cat_v01.jpg" in result.output
+    assert f"{DAY}/20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-cat_v01.jpg" in result.output
 
 
 def test_a_failed_download_is_an_error_and_leaves_no_partial_file(higgs, project, api_key, respx_mock):
@@ -242,3 +242,30 @@ def test_downloads_do_not_send_the_api_key_to_the_cdn(higgs, project, api_key, r
     download = respx_mock.calls.last.request
     assert download.url == "https://cdn.example.com/image-1.jpg"
     assert "Authorization" not in download.headers
+
+
+def test_the_metadata_lists_the_inputs_of_the_request(higgs, project, api_key, respx_mock):
+    (project / "inputs" / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 32)
+    # The upload responses from the docs ("File uploads").
+    respx_mock.post("https://api.higgsfield.ai/files/generate-upload-url").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "public_url": "https://cdn.example.com/input/example.jpeg",
+                "upload_url": "https://storage.example.com/presigned-upload-url",
+                "content_type": "image/jpeg",
+                "upload_headers": {"Content-Type": "image/jpeg"},
+            },
+        )
+    )
+    respx_mock.put("https://storage.example.com/presigned-upload-url").mock(return_value=httpx.Response(200))
+    mock_completed_image(respx_mock)
+
+    result = gen(higgs, "-p", "image_url=inputs/a.jpg")
+
+    assert result.exit_code == 0, result.output
+    metadata = json.loads((project / DAY / "20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-cat_v01.jpg.json").read_text())
+    assert [(item["param"], item["path"], item["public_url"]) for item in metadata["inputs"]] == [
+        ("image_url", "inputs/a.jpg", "https://cdn.example.com/input/example.jpeg")
+    ]
+    assert metadata["params"]["image_url"] == "https://cdn.example.com/input/example.jpeg"

@@ -1,42 +1,23 @@
-"""The clock the core waits on (polling, retries) and reads the time from.
+"""The core's clock: the one source of "now" and the one way to wait.
 
-Everything that sleeps or stamps a time goes through `current()`, so a test (or the
-stage 2 server) can swap in its own clock with `use(...)`: tests use an instant fake
-that records the requested waits.
+Polling, retries and timestamps all go through it, so tests can replace it with an
+instant fake that moves time forward and records the requested waits.
+
+Call it as `clock.now()` / `clock.sleep(...)` (not `from hfcore.clock import now`), so
+a replacement installed by a test is seen everywhere.
 """
 
 from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import Protocol
 
 
-class Clock(Protocol):
-    def now(self) -> datetime:
-        """The current time, timezone-aware."""
-        ...
-
-    def sleep(self, seconds: float) -> None: ...
+def now() -> datetime:
+    """The current time, timezone-aware in UTC."""
+    return datetime.now(UTC)
 
 
-class SystemClock:
-    def now(self) -> datetime:
-        return datetime.now(UTC)
-
-    def sleep(self, seconds: float) -> None:
-        time.sleep(seconds)
-
-
-_current: Clock = SystemClock()
-
-
-def current() -> Clock:
-    return _current
-
-
-def use(clock: Clock) -> Clock:
-    """Make `clock` the one the core uses; returns the previous one (to restore it)."""
-    global _current
-    previous, _current = _current, clock
-    return previous
+def sleep(seconds: float) -> None:
+    """Wait `seconds` (between polls, before a retry)."""
+    time.sleep(seconds)

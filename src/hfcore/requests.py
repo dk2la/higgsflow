@@ -14,8 +14,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from hfcore.errors import HiggsError
 from hfcore import naming
+from hfcore.errors import HiggsError
+from hfcore.inputs import Input
 from hfcore.naming import Naming
 from hfcore.projects import Project
 
@@ -33,7 +34,10 @@ class RequestRecord(BaseModel):
 
     request_id: str
     endpoint: str
+    # As sent: every local Input already replaced by its `public_url`.
     params: dict[str, Any]
+    # The local files behind those URLs (`hfcore.inputs`).
+    inputs: list[Input] = []
     prompt: str | None = None
     status: str
     submitted_at: datetime
@@ -48,6 +52,8 @@ class RequestRecord(BaseModel):
     # Exact price from `POST /estimate/{endpoint}`, as the decimal string the API returns.
     estimate_usd: str | None = None
     error: str | None = None
+    # When `higgs delete` removed the Request's data on the API side (local files stay).
+    deleted_at: datetime | None = None
     # `X-Correlation-ID` of the submit response, for support.
     correlation_id: str | None = None
     # Fixed at submit time so `vNN` stays stable for later downloads (DESIGN.md §5).

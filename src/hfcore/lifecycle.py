@@ -15,6 +15,7 @@ from typing import Any
 from hfcore import clock
 from hfcore.api import ApiClient, ApiError, RequestStatus, Submitted
 from hfcore.errors import HiggsError
+from hfcore.inputs import Input
 from hfcore.projects import Project
 from hfcore.requests import TERMINAL_STATUSES, RequestRecord, new_naming, save_request
 
@@ -39,12 +40,15 @@ def submit_request(
     endpoint: str,
     params: dict[str, Any],
     *,
+    inputs: list[Input] | None = None,
     name: str | None = None,
 ) -> RequestRecord:
     """Submit a Request and write its record before doing anything else.
 
-    `name` is the slug of its Generations (`--name`); without it the slug comes from
-    the prompt. The naming, including `vNN`, is fixed here and stored on the record.
+    `params` must already be resolved (`hfcore.inputs.resolve_inputs`); `inputs` are the
+    local files behind them, kept on the record. `name` is the slug of its Generations
+    (`--name`); without it the slug comes from the prompt. The naming, including `vNN`,
+    is fixed here and stored on the record.
     """
     endpoint = endpoint.strip("/")
     prompt = params.get("prompt")
@@ -52,11 +56,12 @@ def submit_request(
     naming = new_naming(project, endpoint, prompt=prompt, name=name)
     idempotency_key = str(uuid.uuid4())
     submitted = _submit_with_retries(client, endpoint, params, idempotency_key)
-    now = clock.current().now()
+    now = clock.now()
     record = RequestRecord(
         request_id=submitted.request_id,
         endpoint=endpoint,
         params=params,
+        inputs=inputs or [],
         prompt=prompt,
         status=submitted.status,
         submitted_at=now,
@@ -88,7 +93,7 @@ def _submit_with_retries(
             wait = retry_wait(error, backoff, submit=True)
             if wait is None or attempt == SUBMIT_ATTEMPTS:
                 raise
-            clock.current().sleep(wait)
+            clock.sleep(wait)
     raise AssertionError("unreachable")
 
 
@@ -100,7 +105,6 @@ def wait_for_request(
     on_progress: ProgressCallback | None = None,
 ) -> tuple[RequestRecord, RequestStatus]:
     """Poll until the Request reaches a terminal status; the record follows every change."""
-    waiting = clock.current()
     backoff = Backoff()
     failures = 0
     while True:
@@ -115,7 +119,7 @@ def wait_for_request(
                     f"API side; its record is in {project.requests_dir}, so it can be checked again later."
                 )
                 raise
-            waiting.sleep(wait)
+            clock.sleep(wait)
             continue
         failures = 0
         if on_progress is not None:
@@ -124,7 +128,7 @@ def wait_for_request(
             record = record.model_copy(
                 update={
                     "status": status.status,
-                    "updated_at": waiting.now(),
+                    "updated_at": clock.now(),
                     "expires_at": status.expires_at or record.expires_at,
                     "error": status.error or record.error,
                 }
@@ -132,7 +136,7 @@ def wait_for_request(
             save_request(project, record)
         if record.is_terminal:
             return record, status
-        waiting.sleep(backoff.next())
+        clock.sleep(backoff.next())
 
 
 def retry_wait(error: HiggsError, backoff: Backoff, *, submit: bool = False) -> float | None:

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from hfcore import credentials, downloads, lifecycle, requests
+from hfcore import credentials, downloads, inputs, lifecycle, requests
 from hfcore.api import ApiClient
 from hfcore.errors import HiggsError
 from hfcli.output import JsonOpt, print_json, waiting_status
@@ -18,7 +19,14 @@ def gen(
     endpoint: Annotated[str, typer.Argument(help="Endpoint id, e.g. higgsfield-ai/soul/v2/standard.")],
     param: Annotated[
         list[str] | None,
-        typer.Option("--param", "-p", help="A parameter as key=value; JSON values are parsed (5, true, [1,2])."),
+        typer.Option(
+            "--param",
+            "-p",
+            help=(
+                "A parameter as key=value; JSON values are parsed (5, true, [1,2]). "
+                "A local file path (inputs/a.jpg) is uploaded and replaced by its URL."
+            ),
+        ),
     ] = None,
     no_validate: Annotated[bool, typer.Option("--no-validate", help="Do not validate against the catalog.")] = False,
     no_wait: Annotated[bool, typer.Option("--no-wait", help="Return the request id right after submitting.")] = False,
@@ -40,7 +48,10 @@ def gen(
     params = parse_params(param or [])
     target = current_project(project)
     with ApiClient(credentials.load_credentials()) as client:
-        record = lifecycle.submit_request(client, target, endpoint, params, name=name)
+        resolved = inputs.resolve_inputs(client, target, params, cwd=Path.cwd())
+        record = lifecycle.submit_request(
+            client, target, endpoint, resolved.params, inputs=resolved.inputs, name=name
+        )
         path = requests.request_path(target, record.request_id)
         if no_wait:
             if as_json:

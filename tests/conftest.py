@@ -8,14 +8,13 @@ HTTP is replaced at the transport level with respx in the tests that need it.
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from hfcore import clock as core_clock
+import hfcore.clock
 from hfcli.app import app
 
 
@@ -41,32 +40,6 @@ def isolated_env(monkeypatch, projects_root: Path, config_dir: Path):
     monkeypatch.setenv("HIGGS_CONFIG_DIR", str(config_dir))
 
 
-class FakeClock:
-    """Instant clock (Seam 3): `sleep` records the requested wait and moves `now` forward."""
-
-    def __init__(self, start: datetime):
-        self.current = start
-        self.waits: list[float] = []
-
-    def now(self) -> datetime:
-        return self.current
-
-    def sleep(self, seconds: float) -> None:
-        self.waits.append(seconds)
-        self.current += timedelta(seconds=seconds)
-
-
-@pytest.fixture(autouse=True)
-def clock(monkeypatch) -> Iterator[FakeClock]:
-    """Every test runs on a fake clock starting at 2026-10-30 14:12 UTC, so nothing really sleeps."""
-    monkeypatch.setenv("TZ", "UTC")
-    time.tzset()
-    fake = FakeClock(datetime(2026, 10, 30, 14, 12, 5, tzinfo=UTC))
-    previous = core_clock.use(fake)
-    yield fake
-    core_clock.use(previous)
-
-
 @pytest.fixture
 def higgs():
     runner = CliRunner()
@@ -84,6 +57,41 @@ def project(higgs, projects_root: Path, monkeypatch) -> Path:
     path = projects_root / "demo"
     monkeypatch.chdir(path)
     return path
+
+
+class FakeClock:
+    """The core's clock (Seam 3): frozen until a test moves it forward, and instant.
+
+    `sleep` records the requested wait in `waits` and moves `now` forward by it.
+    """
+
+    def __init__(self, start: datetime):
+        self.current = start
+        self.waits: list[float] = []
+
+    def now(self) -> datetime:
+        return self.current
+
+    def sleep(self, seconds: float) -> None:
+        self.waits.append(seconds)
+        self.current += timedelta(seconds=seconds)
+
+    def advance(self, **delta: float) -> None:
+        self.current += timedelta(**delta)
+
+
+@pytest.fixture(autouse=True)
+def clock(monkeypatch) -> FakeClock:
+    """Every test runs on the fake clock, frozen at 2026-10-30 12:00 UTC, so nothing really sleeps.
+
+    Local time is UTC too, so Generation names (local time) are predictable.
+    """
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    fake = FakeClock(datetime(2026, 10, 30, 12, 0, tzinfo=UTC))
+    monkeypatch.setattr(hfcore.clock, "now", fake.now)
+    monkeypatch.setattr(hfcore.clock, "sleep", fake.sleep)
+    return fake
 
 
 @pytest.fixture
