@@ -7,6 +7,8 @@ never has to keep derived fields in sync.
 
 from __future__ import annotations
 
+import difflib
+import re
 from decimal import Decimal
 from typing import Any
 
@@ -119,6 +121,18 @@ class Family(BaseModel):
     name: str
 
 
+class ModelSummary(BaseModel):
+    """A Model with what its Endpoints add up to: Modes, tiers per Mode, "from" price."""
+
+    slug: str
+    name: str
+    family: str
+    kind: str
+    modes: list[str]
+    tiers: dict[str, list[str]]
+    price: Price | None
+
+
 class Catalog(BaseModel):
     """Every known Endpoint, grouped into Models and Families.
 
@@ -154,10 +168,26 @@ class Catalog(BaseModel):
         return self
 
     def model(self, name: str) -> Model:
-        try:
-            return self._by_slug[name]
-        except KeyError:
-            raise HiggsError(f"Unknown model {name!r}.", code="unknown_model") from None
+        """A Model by slug (`kling-3.0`) or display name (`Kling 3.0`), case-insensitively."""
+        found = self._by_slug.get(name) or self._by_slug.get(model_slug(name))
+        if found is None:
+            raise HiggsError(
+                f"Unknown model {name!r}.",
+                hint=_suggest(model_slug(name), list(self._by_slug), "higgs models list"),
+                code="unknown_model",
+            )
+        return found
+
+    def endpoint(self, endpoint_id: str) -> Endpoint:
+        """An Endpoint by its id, the API path (`kling-video/v3.0/pro/image-to-video`)."""
+        found = self._by_id.get(endpoint_id.strip("/"))
+        if found is None:
+            raise HiggsError(
+                f"Unknown endpoint {endpoint_id!r}.",
+                hint=_suggest(endpoint_id, list(self._by_id), "higgs models show <model>"),
+                code="unknown_endpoint",
+            )
+        return found
 
     def endpoints_for(self, model: str, mode: str | None = None) -> list[Endpoint]:
         slug = self.model(model).slug
@@ -179,7 +209,47 @@ class Catalog(BaseModel):
         if not prices:
             return None
         cheapest = min(prices, key=lambda price: price.usd)
+        if all(price == cheapest for price in prices) and cheapest.qualifier == "exact":
+            return cheapest
         return Price(usd=cheapest.usd, unit=cheapest.unit, qualifier="from")
+
+    def summary(self, model: str) -> ModelSummary:
+        found = self.model(model)
+        modes = self.modes(found.slug)
+        return ModelSummary(
+            slug=found.slug,
+            name=found.name,
+            family=found.family,
+            kind=found.kind,
+            modes=modes,
+            tiers={mode: tiers for mode in modes if (tiers := self.tiers(found.slug, mode))},
+            price=self.price_from(found.slug),
+        )
+
+    def summaries(self, family: str | None = None, mode: str | None = None) -> list[ModelSummary]:
+        """Models, optionally only those of a Family and/or having a Mode."""
+        family_id = self.family(family).id if family is not None else None
+        if mode is not None and mode not in {e.mode for e in self.endpoints}:
+            raise HiggsError(
+                f"Unknown mode {mode!r}.", hint="Modes: " + ", ".join(self.all_modes()), code="unknown_mode"
+            )
+        found = [self.summary(model.slug) for model in self.models if family_id in (None, model.family)]
+        return [summary for summary in found if mode is None or mode in summary.modes]
+
+    def all_modes(self) -> list[str]:
+        return sorted({e.mode for e in self.endpoints}, key=_mode_order)
+
+    def family(self, name: str) -> Family:
+        """A Family by id or name, case-insensitively."""
+        wanted = name.strip().lower()
+        for family in self.families:
+            if wanted in (family.id, family.name.lower()):
+                return family
+        raise HiggsError(
+            f"Unknown family {name!r}.",
+            hint="Families: " + ", ".join(family.id for family in self.families),
+            code="unknown_family",
+        )
 
     def resolve(self, model: str, mode: str, tier: str | None = None) -> Endpoint:
         """The one Endpoint for Model + Mode (+ tier, when the Model has tiers for the Mode)."""
@@ -201,6 +271,19 @@ class Catalog(BaseModel):
                 message = f"Model {found.slug} {mode} has no quality tier {tier!r}."
             raise HiggsError(message, hint=f"Its tiers: {tiers}", code="unknown_tier")
         return candidates[0]
+
+
+def model_slug(name: str) -> str:
+    """The Model slug for a display name: `Kling 3.0 Turbo` → `kling-3.0-turbo`."""
+    return re.sub(r"[^a-z0-9.]+", "-", name.lower()).strip("-")
+
+
+def _suggest(wanted: str, known: list[str], fallback: str) -> str:
+    close = difflib.get_close_matches(wanted, known, n=5, cutoff=0.6)
+    close += [name for name in known if name.startswith(wanted) and name not in close]
+    if close:
+        return "Did you mean: " + ", ".join(close[:5]) + "?"
+    return f"See `{fallback}`."
 
 
 def _mode_order(mode: str) -> tuple[int, str]:

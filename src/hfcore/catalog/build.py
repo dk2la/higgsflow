@@ -38,10 +38,12 @@ from hfcore.catalog.model import (
     Parameter,
     Price,
     PromptConstraints,
+    model_slug,
 )
 from hfcore.errors import HiggsError
 
 # Endpoint path prefix → Model name, where one docs model group holds several Models.
+# The first matching prefix wins, so longer prefixes come first.
 MODEL_OVERRIDES = {
     "kling-video/v3.0-turbo/": "Kling 3.0 Turbo",
     "marketing-studio/image/flare": "Marketing Studio Image 2.5 Flare",
@@ -122,10 +124,6 @@ def _pages(docs: str) -> list[_Page]:
 def _unescape(text: str) -> str:
     """Undo the docs' Markdown escaping (`aspect\\_ratio`, `\\<\\<\\<image\\_1>>>`)."""
     return re.sub(r"\\([\\`*_{}\[\]()<>#+\-.!|])", r"\1", text)
-
-
-def _slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9.]+", "-", name.lower()).strip("-")
 
 
 def _kinds(pages: list[_Page]) -> dict[str, str]:
@@ -325,10 +323,9 @@ def build_catalog(docs: str, pricing: dict[str, Any] | None = None) -> Catalog:
         kind = kinds[group_slug]
         model_name = _model_name(endpoint_id, group_title)
         family_name = _family_name(model_name)
-        family = families.setdefault(_slug(family_name), Family(id=_slug(family_name), name=family_name))
-        model = models.setdefault(
-            _slug(model_name), Model(slug=_slug(model_name), name=model_name, family=family.id, kind=kind)
-        )
+        family_id, slug = model_slug(family_name), model_slug(model_name)
+        family = families.setdefault(family_id, Family(id=family_id, name=family_name))
+        model = models.setdefault(slug, Model(slug=slug, name=model_name, family=family.id, kind=kind))
         schema = _schema(page, endpoint_id)
         parameters = _parameters(schema, _rendered_descriptions(page))
         notes = _notes(page)

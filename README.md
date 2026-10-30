@@ -34,6 +34,15 @@ Development, type checking and tests run in the same container:
 scripts/dev test               # pytest (extra args are passed through, e.g. scripts/dev test -k version)
 scripts/dev typecheck          # mypy --strict
 scripts/dev shell              # a shell in the dev container
+scripts/dev catalog            # rebuild src/hfcore/catalog/catalog.json from the snapshots in catalog/
+```
+
+To refresh the model catalog, replace the snapshots and rebuild:
+
+```sh
+curl -sSfL https://docs.higgsfield.ai/docs/llms-full.txt -o catalog/llms-full.txt
+curl -sSfL 'https://dash.higgsfield.ai/api/v2/pricing/models/?page=1&page_size=50' | jq . > catalog/pricing.json
+scripts/dev catalog
 ```
 
 The repo is mounted over `/app`, where the package is installed in editable mode, so source changes
