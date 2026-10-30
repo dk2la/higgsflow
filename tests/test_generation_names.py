@@ -74,6 +74,30 @@ def test_an_endpoint_outside_the_catalog_is_named_from_its_path(higgs, project, 
     assert output["record"]["naming"]["model_slug"] == "kling-video-v4-0-pro"
 
 
+def test_a_broken_models_local_toml_does_not_block_a_raw_call(higgs, project, api_key, respx_mock, config_dir):
+    (config_dir / "models.local.toml").write_text("not = [toml")
+
+    output = generate(higgs, respx_mock, "-p", "prompt=a cat", endpoint=KLING_I2V)
+
+    # Without the catalog the name falls back to the Endpoint id.
+    assert names(output) == ["20261030-1200_kling-video-v3-0-pro_i2v_a-cat_v01.png"]
+
+
+def test_a_corrupt_user_catalog_is_warned_about_once(higgs, project, api_key, respx_mock, config_dir):
+    (config_dir / "catalog.json").write_text("{not json")
+    request_id = "00000000-0000-4000-8000-999999999999"
+    respx_mock.post(f"https://api.higgsfield.ai/{SOUL}").mock(
+        return_value=httpx.Response(200, json={"status": "queued", "request_id": request_id})
+    )
+
+    result = higgs("gen", SOUL, "-p", "prompt=a cat", "--no-wait", "--json")
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr.count("Ignoring the user catalog") == 1
+    # The baked-in catalog still names it.
+    assert json.loads(result.stdout)["record"]["naming"]["model_slug"] == "soul-v2"
+
+
 @pytest.fixture
 def moscow(monkeypatch):
     """Local time is Europe/Moscow (UTC+3), as the host wrapper passes it in `TZ`."""
