@@ -29,12 +29,12 @@ def generate(higgs, respx_mock, outputs: dict[str, Any] = OUTPUTS) -> Path:
     )
     for item in outputs.values():
         respx_mock.get(item["url"]).mock(return_value=httpx.Response(200, content=item["url"].encode()))
-    result = higgs("gen", ENDPOINT, "-p", "prompt=A dancer", "--no-validate", "--json")
+    result = higgs("gen", ENDPOINT, "-p", "prompt=A dancer", "--no-validate", "--json", "--yes")
     assert result.exit_code == 0, result.output
     return Path(json.loads(result.output)["generations"][0]["path"])
 
 
-def test_pick_copies_the_generation_its_artifacts_and_metadata_into_final(higgs, project: Path, api_key, respx_mock):
+def test_pick_copies_the_generation_its_artifacts_and_metadata_into_final(higgs, project: Path, api_key, respx_mock, estimate):
     generation = generate(higgs, respx_mock)
     name = generation.name  # e.g. `..._a-dancer_v01.mov`
     stem = name.removesuffix(".mov")
@@ -59,7 +59,7 @@ def test_pick_copies_the_generation_its_artifacts_and_metadata_into_final(higgs,
     }
 
 
-def test_picked_files_are_independent_copies(higgs, project: Path, api_key, respx_mock):
+def test_picked_files_are_independent_copies(higgs, project: Path, api_key, respx_mock, estimate):
     generation = generate(higgs, respx_mock)
     artifact = generation.with_name(generation.name.removesuffix(".mov") + ".fbx")
     higgs("pick", str(generation), "--json")
@@ -87,7 +87,7 @@ def test_picking_an_unknown_generation_fails_clearly(higgs, project: Path):
     assert list((project / "final").iterdir()) == []
 
 
-def test_a_bare_file_name_is_looked_up_under_generations(higgs, project: Path, api_key, respx_mock, monkeypatch):
+def test_a_bare_file_name_is_looked_up_under_generations(higgs, project: Path, api_key, respx_mock, estimate, monkeypatch):
     generation = generate(higgs, respx_mock)
     monkeypatch.chdir(project / "prompts")  # anywhere in the Project
 
@@ -112,7 +112,7 @@ def test_a_file_without_metadata_is_not_picked(higgs, project: Path):
     assert list((project / "final").iterdir()) == []
 
 
-def test_a_generation_whose_artifact_is_gone_is_not_picked(higgs, project: Path, api_key, respx_mock):
+def test_a_generation_whose_artifact_is_gone_is_not_picked(higgs, project: Path, api_key, respx_mock, estimate):
     generation = generate(higgs, respx_mock)
     artifact = generation.with_name(generation.name.removesuffix(".mov") + ".fbx")
     artifact.unlink()
@@ -126,7 +126,7 @@ def test_a_generation_whose_artifact_is_gone_is_not_picked(higgs, project: Path,
     assert list((project / "final").iterdir()) == []
 
 
-def test_picking_again_refreshes_the_copy_and_says_it_was_already_picked(higgs, project: Path, api_key, respx_mock):
+def test_picking_again_refreshes_the_copy_and_says_it_was_already_picked(higgs, project: Path, api_key, respx_mock, estimate):
     generation = generate(higgs, respx_mock)
     higgs("pick", str(generation), "--json")
     (project / "final" / generation.name).write_bytes(b"damaged")
@@ -139,7 +139,7 @@ def test_picking_again_refreshes_the_copy_and_says_it_was_already_picked(higgs, 
     assert len(list((project / "final").iterdir())) == 4
 
 
-def test_only_files_under_the_projects_generations_can_be_picked(higgs, project: Path, api_key, respx_mock):
+def test_only_files_under_the_projects_generations_can_be_picked(higgs, project: Path, api_key, respx_mock, estimate):
     generation = generate(higgs, respx_mock)
     higgs("pick", str(generation), "--json")
     picked = project / "final" / generation.name
@@ -151,7 +151,7 @@ def test_only_files_under_the_projects_generations_can_be_picked(higgs, project:
     assert picked.read_bytes() == b"https://cdn.example.com/video.mov"
 
 
-def test_pick_reports_what_it_copied(higgs, project: Path, api_key, respx_mock):
+def test_pick_reports_what_it_copied(higgs, project: Path, api_key, respx_mock, estimate):
     generation = generate(higgs, respx_mock)
 
     result = higgs("pick", str(generation))
@@ -160,7 +160,7 @@ def test_pick_reports_what_it_copied(higgs, project: Path, api_key, respx_mock):
     assert f"Picked {generation.name} with 2 Artifact(s) into {project / 'final'}" in result.output
 
 
-def test_a_generation_with_unreadable_metadata_is_not_picked(higgs, project: Path, api_key, respx_mock):
+def test_a_generation_with_unreadable_metadata_is_not_picked(higgs, project: Path, api_key, respx_mock, estimate):
     generation = generate(higgs, respx_mock)
     generation.with_name(f"{generation.name}.json").write_text("not json")
 

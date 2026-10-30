@@ -93,7 +93,7 @@ def test_a_corrupt_user_catalog_is_warned_about_once(higgs, project, api_key, re
         return_value=httpx.Response(200, json={"status": "queued", "request_id": request_id})
     )
 
-    result = higgs("gen", SOUL, "-p", "prompt=a cat", "--no-wait", "--json")
+    result = higgs("gen", SOUL, "-p", "prompt=a cat", "--no-wait", "--json", "--yes")
 
     assert result.exit_code == 0, result.output
     assert result.stderr.count("Ignoring the user catalog") == 1
