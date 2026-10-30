@@ -346,6 +346,8 @@ def build_catalog(docs: str, pricing: dict[str, Any] | None = None) -> Catalog:
                 input_schema=schema,
             )
         )
+    if not endpoints:
+        raise CatalogBuildError("The docs contain no generation Endpoints (no `**Endpoint ID:**` pages).")
     # A tier only distinguishes Endpoints when its Model has more than one.
     for slug in models:
         tiers = {e.tier for e in endpoints if e.model == slug}
