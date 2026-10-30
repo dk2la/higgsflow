@@ -5,6 +5,7 @@ Expected Endpoint ids and parameter names come from the docs (via `catalog.json`
 
 import itertools
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -161,6 +162,77 @@ def test_every_t2i_and_i2i_endpoint_is_reachable_with_the_common_flags(
     if takes_images:
         [image_param] = [name for name in IMAGE_PARAMS if name in sent]
         assert sent[image_param] in (UPLOAD_1, [UPLOAD_1])
+
+
+def test_ads_studio_is_not_an_image_mode(higgs, project, api_key, respx_mock):
+    result = image(higgs, "t2i", "--model", "ads-studio", "--prompt", "Sneaker ad", "--json", "--yes")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "unknown_mode"
+    assert error["hint"] == "Its modes: ads"
+    assert not respx_mock.calls
+
+
+def mock_completed_images(respx_mock, images_per_request: int) -> None:
+    """Every Request completes with `images_per_request` images, each served as its own URL path."""
+
+    def completed(request: httpx.Request) -> httpx.Response:
+        request_id = request.url.path.split("/")[2]
+        # The image output from the docs ("Requests and lifecycle" → Completed output).
+        urls = [f"https://cdn.example.com/{request_id}/image-{n}.png" for n in range(1, images_per_request + 1)]
+        return httpx.Response(
+            200, json={"status": "completed", "request_id": request_id, "images": [{"url": url} for url in urls]}
+        )
+
+    respx_mock.get(url__regex=rf"{API}/requests/req-\d+/status").mock(side_effect=completed)
+    respx_mock.get(url__regex=r"https://cdn.example.com/req-\d+/image-\d+.png").mock(
+        side_effect=lambda request: httpx.Response(200, content=request.url.path.encode())
+    )
+
+
+SOUL_V2 = "higgsfield-ai/soul/v2/standard"  # batch_size 1 or 4, seed 1 to 1000000
+
+
+def test_batch_size_gives_numbered_generations_from_one_request(higgs, project, api_key, respx_mock, estimate):
+    route = mock_submit(respx_mock, SOUL_V2)
+    mock_completed_images(respx_mock, 4)
+
+    result = image(
+        higgs, "t2i", "-m", "soul-v2", "--prompt", "Editorial portrait", "--name", "portrait",
+        "-p", "batch_size=4", "--json", "--yes",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Editorial portrait", "batch_size": 4}
+    [output] = json.loads(result.output)
+    names = [Path(item["path"]).name for item in output["generations"]]
+    assert names == [f"20261030-1200_soul-v2_t2i_portrait_v01-{n}.png" for n in (1, 2, 3, 4)]
+    day = project / "generations" / "2026-10-30"
+    assert [(day / name).read_bytes() for name in names] == [f"/req-1/image-{n}.png".encode() for n in (1, 2, 3, 4)]
+
+
+def test_count_and_batch_size_combine(higgs, project, api_key, respx_mock, estimate):
+    route = mock_submit(respx_mock, SOUL_V2)
+    mock_completed_images(respx_mock, 4)
+
+    result = image(
+        higgs, "t2i", "-m", "soul-v2", "--prompt", "Editorial portrait", "--name", "portrait",
+        "--count", "2", "--seed", "7", "-p", "batch_size=4", input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Submit 2 Requests for $0.188?") == 1
+    assert [body(route, index) for index in (0, 1)] == [
+        {"prompt": "Editorial portrait", "seed": 7, "batch_size": 4},
+        {"prompt": "Editorial portrait", "seed": 8, "batch_size": 4},
+    ]
+    day = project / "generations" / "2026-10-30"
+    for version, request_id in (("v01", "req-1"), ("v02", "req-2")):
+        for n in (1, 2, 3, 4):
+            name = f"20261030-1200_soul-v2_t2i_portrait_{version}-{n}.png"
+            assert (day / name).read_bytes() == f"/{request_id}/image-{n}.png".encode()
+    assert len(list(day.glob("*.png"))) == 8
 
 
 def test_several_images_on_a_model_that_takes_one_fail_before_any_call(higgs, project, api_key, respx_mock, images):
