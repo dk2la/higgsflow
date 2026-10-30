@@ -42,12 +42,12 @@ def make_generation(higgs, respx_mock: respx.MockRouter) -> str:
     respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(200, json=SUBMITTED))
     respx_mock.get(STATUS_URL).mock(return_value=httpx.Response(200, json=COMPLETED))
     respx_mock.get("https://cdn.example.com/image-1.png").mock(return_value=httpx.Response(200, content=PNG))
-    result = higgs("gen", ENDPOINT, "-p", "prompt=a red fox", "--no-validate", "--json")
+    result = higgs("gen", ENDPOINT, "-p", "prompt=a red fox", "--no-validate", "--json", "--yes")
     assert result.exit_code == 0, result.output
     return GENERATION
 
 
-def test_ref_save_copies_the_generation_and_its_metadata_into_references(higgs, project, api_key, respx_mock):
+def test_ref_save_copies_the_generation_and_its_metadata_into_references(higgs, project, api_key, respx_mock, estimate):
     generation = make_generation(higgs, respx_mock)
 
     result = higgs("ref", "save", generation, "hero", "--json")
@@ -73,7 +73,7 @@ def error(result) -> Any:
     return json.loads(result.output)["error"]
 
 
-def test_ref_save_to_a_name_taken_with_another_extension_fails(higgs, project, api_key, respx_mock):
+def test_ref_save_to_a_name_taken_with_another_extension_fails(higgs, project, api_key, respx_mock, estimate):
     generation = make_generation(higgs, respx_mock)
     write(project / "references" / "hero.mp4", MP4)
 
@@ -87,7 +87,7 @@ def test_ref_save_to_a_name_taken_with_another_extension_fails(higgs, project, a
     assert not (project / "references" / "hero.png").exists()
 
 
-def test_ref_save_with_force_replaces_the_old_reference_and_its_metadata(higgs, project, api_key, respx_mock):
+def test_ref_save_with_force_replaces_the_old_reference_and_its_metadata(higgs, project, api_key, respx_mock, estimate):
     generation = make_generation(higgs, respx_mock)
     write(project / "references" / "hero.mp4", MP4)
     write(project / "references" / "hero.mp4.json", b"{}")
@@ -114,7 +114,7 @@ def test_ref_save_of_an_unknown_generation_fails(higgs, project):
     assert not any((project / "references").iterdir())
 
 
-def test_ref_save_of_a_metadata_file_points_to_its_generation(higgs, project, api_key, respx_mock):
+def test_ref_save_of_a_metadata_file_points_to_its_generation(higgs, project, api_key, respx_mock, estimate):
     generation = make_generation(higgs, respx_mock)
 
     result = higgs("ref", "save", f"{generation}.json", "hero", "--json")
@@ -125,7 +125,7 @@ def test_ref_save_of_a_metadata_file_points_to_its_generation(higgs, project, ap
     assert not any((project / "references").iterdir())
 
 
-def test_ref_save_finds_a_generation_by_its_bare_file_name(higgs, project, api_key, respx_mock, monkeypatch):
+def test_ref_save_finds_a_generation_by_its_bare_file_name(higgs, project, api_key, respx_mock, estimate, monkeypatch):
     generation = make_generation(higgs, respx_mock)
     monkeypatch.chdir(project / "prompts")
 
@@ -169,14 +169,14 @@ def submit_no_wait(higgs, respx_mock: respx.MockRouter, *params: str):
     args = ["gen", ENDPOINT]
     for param in params:
         args += ["-p", param]
-    return higgs(*args, "--no-validate", "--no-wait", "--json"), submit
+    return higgs(*args, "--no-validate", "--no-wait", "--json", "--yes"), submit
 
 
 def read_record(project: Path) -> Any:
     return json.loads((project / ".hf" / "requests" / f"{REQUEST_ID}.json").read_text())
 
 
-def test_at_name_resolves_to_a_reference_put_by_hand_and_is_uploaded(higgs, project, api_key, respx_mock):
+def test_at_name_resolves_to_a_reference_put_by_hand_and_is_uploaded(higgs, project, api_key, respx_mock, estimate):
     write(project / "references" / "hero.png", PNG)
     write(project / "references" / "hero.png.json", b"{}")  # metadata, not a second Reference
     storage = mock_upload(respx_mock)
@@ -193,12 +193,12 @@ def test_at_name_resolves_to_a_reference_put_by_hand_and_is_uploaded(higgs, proj
     assert reference["public_url"] == PUBLIC_URL
 
 
-def test_a_saved_generation_is_used_as_at_name_in_the_next_request(higgs, project, api_key, respx_mock):
+def test_a_saved_generation_is_used_as_at_name_in_the_next_request(higgs, project, api_key, respx_mock, estimate):
     generation = make_generation(higgs, respx_mock)
     assert higgs("ref", "save", generation, "fox").exit_code == 0
     storage = mock_upload(respx_mock)
 
-    result = higgs("gen", ENDPOINT, "-p", "prompt=the fox at night", "-p", "image_url=@fox", "--no-validate", "--no-wait", "--json")
+    result = higgs("gen", ENDPOINT, "-p", "prompt=the fox at night", "-p", "image_url=@fox", "--no-validate", "--no-wait", "--json", "--yes")
 
     assert result.exit_code == 0, result.output
     assert storage.calls.last.request.content == PNG
@@ -207,7 +207,7 @@ def test_a_saved_generation_is_used_as_at_name_in_the_next_request(higgs, projec
     assert (reference["source"], reference["path"]) == ("@fox", "references/fox.png")
 
 
-def test_at_name_satisfies_a_url_parameter_when_validated_against_the_catalog(higgs, project, api_key, respx_mock):
+def test_at_name_satisfies_a_url_parameter_when_validated_against_the_catalog(higgs, project, api_key, respx_mock, estimate):
     # Ads Studio: image_urls items must match ^https?:// — true once the Reference is uploaded.
     write(project / "references" / "hero.png", PNG)
     mock_upload(respx_mock)
@@ -216,7 +216,7 @@ def test_at_name_satisfies_a_url_parameter_when_validated_against_the_catalog(hi
     )
 
     result = higgs(
-        "gen", "higgsfield/ads-studio/v1.0", "-p", "prompt=a sneaker ad", "-p", 'image_urls=["@hero"]', "--no-wait", "--json"
+        "gen", "higgsfield/ads-studio/v1.0", "-p", "prompt=a sneaker ad", "-p", 'image_urls=["@hero"]', "--no-wait", "--json", "--yes"
     )
 
     assert result.exit_code == 0, result.output
@@ -262,7 +262,7 @@ def test_an_unknown_at_name_in_a_project_without_references_says_how_to_add_one(
     assert not submit.called
 
 
-def test_a_double_at_sends_a_literal_at_and_text_with_spaces_is_never_a_reference(higgs, project, api_key, respx_mock):
+def test_a_double_at_sends_a_literal_at_and_text_with_spaces_is_never_a_reference(higgs, project, api_key, respx_mock, estimate):
     result, submit = submit_no_wait(
         higgs, respx_mock, "prompt=@hero walks into the bar", "style=@@hero", 'tags=["@@a", "@@@b"]'
     )
@@ -276,7 +276,7 @@ def test_a_double_at_sends_a_literal_at_and_text_with_spaces_is_never_a_referenc
     assert read_record(project)["inputs"] == []
 
 
-def test_ref_list_shows_each_reference_with_its_type_size_and_source(higgs, project, api_key, respx_mock):
+def test_ref_list_shows_each_reference_with_its_type_size_and_source(higgs, project, api_key, respx_mock, estimate):
     generation = make_generation(higgs, respx_mock)
     assert higgs("ref", "save", generation, "fox").exit_code == 0
     write(project / "references" / "alley.mp4", MP4)  # put by hand: no metadata
