@@ -357,6 +357,87 @@ def test_soul_passes_the_soul_id_as_custom_reference_id_to_the_matching_soul_mod
     assert body(route) == {"prompt": "Alice on a beach", "custom_reference_id": SOUL_ID}
 
 
+def t2i_with_soul(higgs, model: str, soul: str = "alice"):
+    return higgs("image", "t2i", "--model", model, "--prompt", "Alice", "--soul", soul, "--no-wait", "--json", "--yes")
+
+
+def test_a_soul_id_of_another_version_than_the_soul_model_fails_before_any_call(
+    higgs, project, photos, api_key, respx_mock
+):
+    assert train(higgs, respx_mock, "alice", version="v1").exit_code == 0
+    respx_mock.reset()
+
+    result = t2i_with_soul(higgs, "soul-v2")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "soul_version_mismatch"
+    assert error["message"] == "Soul ID alice is a v1 Soul ID; soul-v2 takes v2 Soul IDs only"
+    assert "--model soul" in error["hint"]
+    assert not respx_mock.calls
+
+
+def test_an_unknown_soul_lists_the_registered_ones(higgs, project, photos, api_key, respx_mock):
+    assert train(higgs, respx_mock, "alice").exit_code == 0
+    assert train(higgs, respx_mock, "bob", soul_id=OTHER_ID).exit_code == 0
+    respx_mock.reset()
+
+    result = t2i_with_soul(higgs, "soul-v2", soul="alicia")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "soul_not_found"
+    assert error["hint"] == "Registered: alice, bob."
+    assert not respx_mock.calls
+
+
+def test_soul_on_a_model_without_soul_ids_is_an_unsupported_flag(higgs, project, api_key, respx_mock):
+    result = t2i_with_soul(higgs, "grok-image-2.0")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "unsupported_flag"
+    assert error["message"] == "--soul is not supported by grok-image-2.0 t2i"
+    assert not respx_mock.calls
+
+
+def test_a_soul_still_training_is_checked_with_the_api_before_it_fails(higgs, project, photos, api_key, respx_mock):
+    assert train(higgs, respx_mock, "alice", args=["--no-wait"]).exit_code == 0
+    polls = status_route(respx_mock, "in_progress")
+
+    result = t2i_with_soul(higgs, "soul-v2")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "soul_not_ready"
+    assert "in_progress" in error["message"]
+    assert polls.call_count == 1
+
+
+def test_a_soul_that_finished_training_since_no_wait_is_used_right_away(
+    higgs, project, photos, api_key, respx_mock, estimate, config_dir
+):
+    assert train(higgs, respx_mock, "alice", args=["--no-wait"]).exit_code == 0
+    status_route(respx_mock, "completed")
+    route = respx_mock.post(f"{API}/higgsfield-ai/soul/v2/standard").mock(return_value=submitted("req-1"))
+
+    result = t2i_with_soul(higgs, "soul-v2")
+
+    assert result.exit_code == 0, result.output
+    assert body(route)["custom_reference_id"] == SOUL_ID
+    assert souls_toml(config_dir)["souls"]["alice"]["status"] == "completed"
+
+
+def test_a_failed_soul_cannot_be_used(higgs, project, photos, api_key, respx_mock):
+    assert train(higgs, respx_mock, "alice", status="failed").exit_code == 1
+    respx_mock.reset()
+
+    result = t2i_with_soul(higgs, "soul-v2")
+
+    assert json.loads(result.output)["error"]["code"] == "soul_training_failed"
+    assert not respx_mock.calls
+
+
 def test_soul_list_without_any_soul_ids_says_how_to_train_one(higgs):
     result = higgs("soul", "list")
 
