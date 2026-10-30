@@ -37,6 +37,7 @@ _CHUNK = 1 << 20
 # Extensions that make a string look like a path even when no such file exists.
 MEDIA_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif", ".wav", ".mp4"})
 ALLOWED_TYPES = "jpeg, png, webp, gif, wav or mp4"  # DESIGN.md §9
+IMAGE_TYPES = "jpeg, png, webp or gif"
 _NOT_MP4_BRANDS = frozenset(
     {b"qt  ", b"M4A ", b"M4B ", b"M4P "}
     | {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1", b"avif", b"avis"}
@@ -75,11 +76,19 @@ class _Found:
     content_type: str
 
 
-def resolve_inputs(client: ApiClient, project: Project, params: dict[str, Any], *, cwd: Path) -> ResolvedParams:
+def resolve_inputs(
+    client: ApiClient,
+    project: Project,
+    params: dict[str, Any],
+    *,
+    cwd: Path,
+    images_only: bool = False,
+) -> ResolvedParams:
     """Upload every local file in `params` and replace it by its `public_url`.
 
     Every file is checked before the first upload, so one bad file uploads nothing.
     A value starting with `@@` is sent with one `@` removed and is never a file.
+    `images_only` narrows the allowed types to images (Soul ID training).
     """
     # The string at each param (as `_strings` walks) that replaces the given value.
     replacements: dict[str, str] = {}
@@ -89,7 +98,7 @@ def resolve_inputs(client: ApiClient, project: Project, params: dict[str, Any], 
             if (literal := references.unescape(value)) is not None:
                 replacements[param] = literal
             elif (path := _locate(value, cwd, project)) is not None:
-                found.append(_check(param, value, path, project))
+                found.append(_check(param, value, path, project, images_only=images_only))
 
     inputs: list[Input] = []
     for item in found:
@@ -162,7 +171,7 @@ def _file_path(value: str, cwd: Path) -> Path | None:
     return None
 
 
-def _check(param: str, source: str, path: Path, project: Project) -> _Found:
+def _check(param: str, source: str, path: Path, project: Project, *, images_only: bool = False) -> _Found:
     """Everything that can be checked locally, before any upload."""
     root = config.projects_root().resolve()
     real = path.resolve()
@@ -186,6 +195,12 @@ def _check(param: str, source: str, path: Path, project: Project) -> _Found:
         raise HiggsError(
             f"Input {source} is not a supported file type",
             hint=f"Inputs must be {ALLOWED_TYPES}; convert the file first.",
+            code="unsupported_input_type",
+        )
+    if images_only and not content_type.startswith("image/"):
+        raise HiggsError(
+            f"Input {source} is not an image ({content_type})",
+            hint=f"Only images can be used here: {IMAGE_TYPES}.",
             code="unsupported_input_type",
         )
     return _Found(param=param, source=source, path=real, sha256=_sha256(real), content_type=content_type)

@@ -26,8 +26,10 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import re
 import tomllib
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -47,6 +49,30 @@ TERMINAL_STATUSES = frozenset({"completed", "failed"})
 # `input_images` of `POST /v1/custom-references`.
 MIN_IMAGES = 1
 MAX_IMAGES = 100
+# The API's `name` takes up to 100 characters; the registry name is sent as it.
+MAX_NAME_LENGTH = 100
+NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+@dataclass(frozen=True)
+class SoulModel:
+    """The SOUL Model (and its Endpoint) a Soul ID version is trained for."""
+
+    model: str
+    endpoint: str
+
+
+# Soul ID version (`model_version`) → the one SOUL Endpoint that takes it as `custom_reference_id`
+# (docs: "pass the returned id as custom_reference_id to the matching Soul generation endpoint").
+VERSIONS: dict[str, SoulModel] = {
+    "v1": SoulModel("soul", "higgsfield-ai/soul/standard"),
+    "v2": SoulModel("soul-v2", "higgsfield-ai/soul/v2/standard"),
+    "cinema": SoulModel("soul-cinema", "higgsfield-ai/soul/cinema"),
+}
+
+
+def _version_models() -> str:
+    return ", ".join(f"{version} for {soul_model.model}" for version, soul_model in VERSIONS.items())
 
 # Called with each status seen while waiting for a training.
 SoulProgress = Callable[[CustomReference], None]
@@ -94,6 +120,8 @@ def train_soul(
 
     Everything that can be checked locally is checked before the first upload.
     """
+    check_name(name)
+    version = check_version(version)
     if not MIN_IMAGES <= len(images) <= MAX_IMAGES:
         raise HiggsError(
             f"A Soul ID is trained on {MIN_IMAGES}–{MAX_IMAGES} images, got {len(images)}",
@@ -109,7 +137,15 @@ def train_soul(
             ),
             code="soul_exists",
         )
-    resolved = inputs.resolve_inputs(client, project, {"input_images": list(images)}, cwd=cwd)
+    for image in images:
+        # A URL is sent as it is; anything else must be a file (or Reference) to upload.
+        if "://" not in image and not inputs.is_input(image, cwd):
+            raise HiggsError(
+                f"Training image {image} is not a file",
+                hint="Pass image files in the Project (e.g. inputs/front.jpg) or References (@name).",
+                code="soul_image_not_a_file",
+            )
+    resolved = inputs.resolve_inputs(client, project, {"input_images": list(images)}, cwd=cwd, images_only=True)
     urls: list[str] = resolved.params["input_images"]
     body = {
         "name": name,
@@ -132,6 +168,31 @@ def train_soul(
     )
     save_soul(soul)
     return soul
+
+
+def check_name(name: str) -> None:
+    """A Soul ID name is a short word: letters, digits, `.`, `_`, `-` (it is also its name on the API)."""
+    if not NAME_PATTERN.fullmatch(name) or len(name) > MAX_NAME_LENGTH:
+        raise HiggsError(
+            f"Invalid Soul ID name {name!r}",
+            hint=(
+                f"Use up to {MAX_NAME_LENGTH} letters, digits, '.', '_' or '-', "
+                "starting with a letter or digit, e.g. alice or hero-v2."
+            ),
+            code="invalid_soul_name",
+        )
+
+
+def check_version(version: str) -> str:
+    """The version as the API spells it (`V2` → `v2`); an unknown one is an error."""
+    normalized = version.lower()
+    if normalized not in VERSIONS:
+        raise HiggsError(
+            f"Unknown Soul ID version {version}",
+            hint=f"Use one of {', '.join(VERSIONS)}: {_version_models()}.",
+            code="invalid_soul_version",
+        )
+    return normalized
 
 
 def _create_with_retries(client: ApiClient, body: dict[str, Any]) -> CustomReference:

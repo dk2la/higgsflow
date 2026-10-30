@@ -266,3 +266,25 @@ def test_a_taken_name_fails_before_any_upload_unless_forced(higgs, project, phot
     assert forced.exit_code == 0, forced.output
     registered = souls_toml(config_dir)["souls"]["alice"]
     assert (registered["id"], registered["version"]) == (OTHER_ID, "cinema")
+
+
+@pytest.mark.parametrize(
+    ("args", "code"),
+    [
+        (["alice", "inputs/front.jpg", "--version", "v3"], "invalid_soul_version"),
+        (["two words", "inputs/front.jpg"], "invalid_soul_name"),
+        (["a" * 101, "inputs/front.jpg"], "invalid_soul_name"),
+        (["alice", "inputs/front.jpg", "inputs/clip.mp4"], "unsupported_input_type"),
+        (["alice", "inputs/front.jpg", "inputs/missing.jpg"], "input_not_found"),
+        (["alice", "inputs/front.jpg", "front"], "soul_image_not_a_file"),
+    ],
+)
+def test_bad_arguments_fail_before_any_upload(higgs, project, photos, api_key, respx_mock, config_dir, args, code):
+    (project / "inputs" / "clip.mp4").write_bytes(MP4)
+
+    result = higgs("soul", "train", *args, "--json")
+
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["code"] == code
+    assert not respx_mock.calls
+    assert not (config_dir / "souls.toml").exists()
