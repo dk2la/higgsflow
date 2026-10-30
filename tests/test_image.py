@@ -235,6 +235,84 @@ def test_count_and_batch_size_combine(higgs, project, api_key, respx_mock, estim
     assert len(list(day.glob("*.png"))) == 8
 
 
+def write_defaults(project, defaults: str) -> None:
+    (project / "project.toml").write_text(f'name = "demo"\n\n{defaults}\n')
+
+
+def test_image_defaults_beat_the_shared_ones(higgs, project, api_key, respx_mock, estimate):
+    # The shared default Model is a video Model, so it does not count for images.
+    write_defaults(
+        project,
+        '[defaults]\nmodel = "kling-3.0"\naspect = "16:9"\nduration = 5\n\n'
+        '[defaults.image]\nmodel = "soul-v2"\nquality = "1080p"\n',
+    )
+    route = mock_submit(respx_mock, SOUL_V2)
+
+    result = image(higgs, "t2i", "--prompt", "Editorial portrait", "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Editorial portrait", "aspect_ratio": "16:9", "resolution": "1080p"}
+
+
+def test_a_missing_model_is_asked_for_among_the_models_of_the_mode(higgs, project, api_key, respx_mock, estimate):
+    route = mock_submit(respx_mock, "z-image/turbo")
+
+    result = image(higgs, "t2i", "--prompt", "A lighthouse", "--no-wait", "--yes", input="z-image-turbo\n")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "A lighthouse"}
+    assert "recraft-v4.1" in result.output  # the Models with t2i are offered
+    assert "kling-3.0" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("args", "flag"),
+    [
+        (("t2i", "--prompt", "A lighthouse"), "--model"),
+        (("t2i", "--model", "recraft-v4.1"), "--prompt"),
+        (("i2i", "--model", "qwen-image-3", "--prompt", "Make it night"), "--image"),
+    ],
+)
+def test_without_input_a_missing_parameter_fails_at_once(higgs, project, api_key, respx_mock, args, flag):
+    result = image(higgs, *args, "--json", "--yes")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "missing_param"
+    assert error["message"] == f"Missing {flag}"
+    assert not respx_mock.calls
+
+
+def test_a_missing_input_image_is_asked_for(higgs, project, api_key, respx_mock, estimate, images):
+    mock_uploads(respx_mock)
+    route = mock_submit(respx_mock, "alibaba/qwen-image-3/edit")
+
+    result = image(
+        higgs, "i2i", "--model", "qwen-image-3", "--prompt", "Make it night", "--no-wait", "--yes",
+        input="inputs/a.jpg\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Make it night", "image_urls": [UPLOAD_1]}
+
+
+def test_an_image_can_be_a_reference_and_p_parameters_win(higgs, project, api_key, respx_mock, estimate):
+    (project / "references" / "hero.jpg").write_bytes(JPEG)
+    mock_uploads(respx_mock)
+    route = mock_submit(respx_mock, "higgsfield-ai/soul/standard")
+
+    result = image(
+        higgs, "t2i", "--model", "soul", "--prompt", "Hero portrait", "--image", "@hero", "--aspect", "1:1",
+        "-p", "aspect_ratio=3:4", "-p", "style_strength=0.5", "--no-wait", "--json", "--yes",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {
+        "prompt": "Hero portrait", "image_reference_url": UPLOAD_1, "aspect_ratio": "3:4", "style_strength": 0.5,
+    }
+    assert json.loads(result.output)[0]["record"]["inputs"][0]["source"] == "@hero"
+
+
 def test_several_images_on_a_model_that_takes_one_fail_before_any_call(higgs, project, api_key, respx_mock, images):
     result = image(
         higgs, "t2i", "--model", "ideogram-4.0", "--prompt", "In this style",
