@@ -11,7 +11,7 @@ from typer.core import TyperGroup
 
 from hfcore import __version__
 from hfcore.errors import HiggsError, HiggsWarning
-from hfcli import auth, gen, models, projects, request_actions
+from hfcli import auth, gen, models, projects, request_actions, tracking
 from hfcli.output import JsonOpt, json_mode, print_json, render_error, render_warning
 
 
@@ -74,6 +74,10 @@ app.add_typer(auth.app, name="auth")
 app.command()(gen.gen)
 app.command()(request_actions.cancel)
 app.command()(request_actions.delete)
+app.command()(tracking.status)
+app.command("list")(tracking.list_requests)
+app.command()(tracking.sync)
+app.command()(tracking.download)
 app.add_typer(models.app)
 
 

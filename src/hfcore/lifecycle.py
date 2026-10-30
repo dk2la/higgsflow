@@ -124,19 +124,25 @@ def wait_for_request(
         failures = 0
         if on_progress is not None:
             on_progress(status)
-        if status.status != record.status or status.status in TERMINAL_STATUSES:
-            record = record.model_copy(
-                update={
-                    "status": status.status,
-                    "updated_at": clock.now(),
-                    "expires_at": status.expires_at or record.expires_at,
-                    "error": status.error or record.error,
-                }
-            )
-            save_request(project, record)
+        record = record_status(project, record, status)
         if record.is_terminal:
             return record, status
         clock.sleep(backoff.next())
+
+
+def record_status(project: Project, record: RequestRecord, status: RequestStatus) -> RequestRecord:
+    """The record updated with a status response, saved when the status changed or is terminal."""
+    if status.status != record.status or status.status in TERMINAL_STATUSES:
+        record = record.model_copy(
+            update={
+                "status": status.status,
+                "updated_at": clock.now(),
+                "expires_at": status.expires_at or record.expires_at,
+                "error": status.error or record.error,
+            }
+        )
+        save_request(project, record)
+    return record
 
 
 def retry_wait(error: HiggsError, backoff: Backoff, *, submit: bool = False) -> float | None:
