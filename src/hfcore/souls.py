@@ -23,6 +23,7 @@ thumbnail_url = "https://..."
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import tomllib
@@ -43,6 +44,9 @@ SOULS_FILE = "souls.toml"
 # SOUL V2 is the current SOUL Model; the API's own default is v1.
 DEFAULT_VERSION = "v2"
 TERMINAL_STATUSES = frozenset({"completed", "failed"})
+# `input_images` of `POST /v1/custom-references`.
+MIN_IMAGES = 1
+MAX_IMAGES = 100
 
 # Called with each status seen while waiting for a training.
 SoulProgress = Callable[[CustomReference], None]
@@ -85,7 +89,16 @@ def train_soul(
     version: str,
     cwd: Path,
 ) -> Soul:
-    """Upload the images, start the training and register the Soul ID; returns at once (see `wait_for_soul`)."""
+    """Upload the images, start the training and register the Soul ID; returns at once (see `wait_for_soul`).
+
+    Everything that can be checked locally is checked before the first upload.
+    """
+    if not MIN_IMAGES <= len(images) <= MAX_IMAGES:
+        raise HiggsError(
+            f"A Soul ID is trained on {MIN_IMAGES}–{MAX_IMAGES} images, got {len(images)}",
+            hint="Pass the training images after the name: higgs soul train <name> inputs/a.jpg inputs/b.jpg ...",
+            code="soul_image_count",
+        )
     resolved = inputs.resolve_inputs(client, project, {"input_images": list(images)}, cwd=cwd)
     urls: list[str] = resolved.params["input_images"]
     body = {
@@ -122,6 +135,10 @@ def wait_for_soul(client: ApiClient, soul: Soul, *, on_progress: SoulProgress | 
             failures += 1
             wait = retry_wait(error, backoff)
             if wait is None or failures >= POLL_ERROR_ATTEMPTS:
+                error.hint = (
+                    f"{error.hint + ' ' if error.hint else ''}Soul ID {soul.name} ({soul.id}) is registered in "
+                    f"{souls_path()}; check on its training with `higgs soul status {soul.name}`."
+                )
                 raise
             clock.sleep(wait)
             continue
@@ -132,6 +149,25 @@ def wait_for_soul(client: ApiClient, soul: Soul, *, on_progress: SoulProgress | 
         if soul.is_terminal:
             return soul
         clock.sleep(backoff.next())
+
+
+def refresh_soul(client: ApiClient, name: str) -> Soul:
+    """Ask the API for a registered Soul ID's training status once; `souls.toml` follows."""
+    soul = get_soul(name)
+    return record_status(soul, client.custom_reference(soul.id))
+
+
+def get_soul(name: str) -> Soul:
+    """The registered Soul ID with this name; an unknown name lists the registered ones."""
+    registered = load_souls()
+    if name in registered:
+        return registered[name]
+    close = difflib.get_close_matches(name, list(registered), n=len(registered), cutoff=0.6)
+    others = close + [other for other in registered if other not in close]
+    hint = (
+        f"Registered: {', '.join(others)}." if others else "None registered yet; train one with `higgs soul train`."
+    )
+    raise HiggsError(f"No Soul ID named {name} in {souls_path()}", hint=hint, code="soul_not_found")
 
 
 def record_status(soul: Soul, status: CustomReference) -> Soul:

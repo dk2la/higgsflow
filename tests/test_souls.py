@@ -115,3 +115,65 @@ def test_training_uploads_the_images_registers_the_soul_and_polls_to_completion(
         "thumbnail_url": "https://cdn.example.com/t.webp",
     }
     assert clock.waits  # it waited between polls
+
+
+def test_the_soul_is_registered_as_soon_as_the_training_starts_so_a_failed_wait_loses_nothing(
+    higgs, project, photos, api_key, respx_mock, config_dir
+):
+    mock_uploads(respx_mock)
+    respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(200, json=reference("not_ready")))
+    respx_mock.get(f"{CREATE_URL}/{SOUL_ID}").mock(side_effect=httpx.ConnectError("connection dropped"))
+
+    result = higgs("soul", "train", "alice", *photos, "--json")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "network_error"
+    assert "higgs soul status alice" in error["hint"]
+    registered = souls_toml(config_dir)["souls"]["alice"]
+    assert (registered["id"], registered["status"]) == (SOUL_ID, "not_ready")
+
+
+def test_no_wait_returns_after_the_start_and_soul_status_reports_progress_later(
+    higgs, project, photos, api_key, respx_mock, config_dir, clock
+):
+    mock_uploads(respx_mock)
+    respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(200, json=reference("not_ready")))
+    polls = status_route(respx_mock, "in_progress", "completed")
+
+    started = higgs("soul", "train", "alice", *photos, "--no-wait", "--json")
+
+    assert started.exit_code == 0, started.output
+    assert json.loads(started.output)["soul"]["status"] == "not_ready"
+    assert polls.call_count == 0
+
+    clock.advance(minutes=2)
+    progress = higgs("soul", "status", "alice", "--json")
+
+    assert progress.exit_code == 0, progress.output
+    assert json.loads(progress.output)["soul"]["status"] == "in_progress"
+    assert souls_toml(config_dir)["souls"]["alice"]["status"] == "in_progress"
+    assert souls_toml(config_dir)["souls"]["alice"]["updated_at"] == clock.current
+
+    done = higgs("soul", "status", "alice", "--json")
+
+    assert json.loads(done.output)["soul"]["status"] == "completed"
+    assert souls_toml(config_dir)["souls"]["alice"]["status"] == "completed"
+    assert polls.call_count == 2
+
+
+@pytest.mark.parametrize("count", [0, 101])
+def test_fewer_than_1_or_more_than_100_images_fail_before_any_upload(higgs, project, api_key, respx_mock, config_dir, count):
+    for index in range(count):
+        (project / "inputs" / f"{index}.jpg").write_bytes(JPEG)
+    paths = [f"inputs/{index}.jpg" for index in range(count)]
+
+    result = higgs("soul", "train", "alice", *paths, "--json")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "soul_image_count"
+    assert f"got {count}" in error["message"]
+    assert not respx_mock.calls
+    assert not (config_dir / "souls.toml").exists()
+    assert not (project / ".hf" / "uploads.json").exists()

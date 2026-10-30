@@ -52,6 +52,20 @@ def train(
     typer.echo(f"Soul ID {soul.name} ({soul.version}): {soul.status}")
 
 
+@app.command("status")
+def status(
+    name: Annotated[str, typer.Argument(help="A registered Soul ID (see `higgs soul list`).")],
+    as_json: JsonOpt = False,
+) -> None:
+    """Ask the API how a Soul ID's training is going and update souls.toml."""
+    with ApiClient(credentials.load_credentials()) as client:
+        soul = souls.refresh_soul(client, name)
+    if as_json:
+        print_json(_soul_json(soul))
+        return
+    typer.echo(f"Soul ID {soul.name} ({soul.version}): {soul.status}")
+
+
 def _soul_json(soul: souls.Soul) -> dict[str, Any]:
     return {"soul": soul, "path": str(souls.souls_path())}
 
