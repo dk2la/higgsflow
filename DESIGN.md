@@ -123,8 +123,19 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
   `..._sunset-beach_v03-1.png`, `..._v03-2.png`. A single Generation gets no suffix.
 - Extra artifacts (`zip`, `mov`, `jsx`, `fbx`, `ply` from some video/3D operations) are always downloaded
   and named after their Generation with their own extension (`..._v03.mp4` + `..._v03.fbx`); on an
-  extension clash the output field key is appended. The single `.json` of the Generation lists all its
-  artifacts, and `pick` copies the Generation with all its artifacts.
+  extension clash the output field key is appended (`..._v03.mov` + `..._v03-mov.mov`). The single `.json`
+  of the Generation lists all its artifacts, and `pick` copies the Generation with all its artifacts.
+  With several Generations the artifacts take the Request's name without `-N` and every Generation's
+  `.json` lists them; a Request that returns artifacts only (e.g. a 3D scene) has them as its Generations.
+- The model slug, Mode, slug and `vNN` are fixed when the Request is submitted and stored in its record
+  (`naming`), so a later `sync`/`download` gives the same names. Timestamps are in local time.
+- For a raw `higgs gen` (no catalog) they come from the Endpoint id: the first path segment that names a
+  Mode is the Mode (`text-to-video` → `t2v`, `image-to-video`/`first-last-frame` → `i2v`,
+  `reference-to-video`/`image-reference`/`video-reference` → `ref`, `edit`/`video-edit` → `edit`,
+  `video-extend` → `extend`, `motion-control`/`motion-transfer` → `motion`, `text-to-image` → `t2i`;
+  none → `gen`), and the remaining segments, slugified, are the model slug:
+  `kling-video/v3.0/pro/image-to-video` → `kling-video-v3-0-pro` + `i2v`. Without `--name` or a prompt
+  the slug is `untitled`.
 
 ## 6. Model catalog
 
@@ -238,12 +249,20 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 1. Validate parameters against the catalog schema.
 2. Local files (`inputs/a.jpg`, `@hero`) are uploaded automatically:
    `POST /files/generate-upload-url` → `PUT` with `upload_headers` → `public_url`.
-   Cached by sha256 for 7 days (the API deletes uploads after 7 days).
+   Cached by sha256 for 7 days (the API deletes uploads after 7 days); an entry is reused while
+   more than an hour of it is left. A string parameter value (also inside lists and objects) is a
+   local file when it names an existing file (relative to the current directory, or absolute) or
+   ends in an allowed media extension (`.jpg`, `.png`, `.mp4`, …; then a missing file is an error);
+   URLs never are. The type is judged by the file's content, not its name. Every file is checked
+   (projects root, type) before the first upload. The Request record lists its Inputs
+   (`param`, `source`, `path`, `sha256`, `content_type`, `public_url`).
 3. Exact price: `POST /estimate/{endpoint}` with the same body → `{"usd": "..."}`.
    Display, confirmation (`--yes` skips it), project `budget` check. Project spend is the sum of the
    estimated prices of `completed` Requests (failed/nsfw/canceled are not billed). If spend + this price
    exceeds `budget`: a warning plus confirmation; with `--yes` only the warning, never a block.
 4. Submit `POST /{endpoint}` with an `Idempotency-Key` (UUID); immediately write `.hf/requests/<request_id>.json`.
+   A network failure, timeout or `5xx` (other than a disabled model) and a `429` (after `Retry-After`) are
+   retried a few times with the same key, so a retried submit is never billed twice.
 5. Polling `GET /requests/{id}/status`: 2 s → backoff up to 10 s + jitter.
    `429 account_queue_full` → wait for `Retry-After`; `503` → retry with backoff.
 6. Terminal statuses: `completed`, `failed`, `nsfw`, `canceled` (failed/nsfw/canceled are not billed).

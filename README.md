@@ -37,8 +37,17 @@ higgs models show kling-3.0      # every Endpoint of a Model: parameters, allowe
 higgs models sync                # refresh the catalog from the live docs into ~/.config/higgs/catalog.json
 cd ~/hf-projects/demo
 higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=2 \
-  --no-validate --no-wait        # submits a Request; its record lands in .hf/requests/<request_id>.json
+  --no-validate                  # submits a Request, waits for it and downloads the Generations
+higgs gen bytedance/seedance-2.0/text-to-video -p prompt="Waves at dusk" --name sunset-beach \
+  --no-validate --no-wait        # only submits; the record lands in .hf/requests/<request_id>.json
 ```
+
+Without `--no-wait`, `higgs gen` polls the Request (2 s backing off to 10 s, waiting out a full queue and
+retrying transient errors) and downloads every Generation and Artifact into `generations/YYYY-MM-DD/` as
+`YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN[-N].<ext>`, each with a `<file>.json` describing how it was
+made. `<slug>` is `--name` or the first words of the prompt; `vNN` counts the Project's Requests with that
+slug. For a raw `gen` the model slug and Mode come from the Endpoint id (see DESIGN.md §5). A failed, nsfw
+or canceled Request ends with an error and downloads nothing.
 
 The key can also come from `HF_KEY="id:secret"` or `HF_API_KEY` + `HF_API_SECRET`, which take precedence
 over the saved file. Project-scoped commands find the Project by walking up from the current directory to
@@ -46,8 +55,16 @@ the nearest `project.toml`, like git; `--project <name>` picks another one. `-p`
 when they are valid JSON (`5`, `0.5`, `true`, `null`, `[...]`, `{...}`) and are strings otherwise
 (`16:9`); quote a value to force a string (`-p 'seed="42"'`). Every command takes `--json`.
 
-For now `higgs gen` requires `--no-validate` (validation against the catalog is not built yet) and `--no-wait`
-(waiting for and downloading the result is not built yet).
+A `-p` value that is a local file is an Input: it is uploaded before the submit and replaced by its
+`public_url`, also inside lists and objects (`-p image_url=inputs/a.jpg`,
+`-p 'images=["inputs/a.jpg","inputs/b.png"]'`). A string counts as a file when it names an existing file
+(relative to the current directory, or absolute) or ends in `.jpg`/`.jpeg`/`.png`/`.webp`/`.gif`/`.wav`/`.mp4`
+(then a missing file is an error); URLs are left alone. The file must be inside the projects root (copy it
+into the Project's `inputs/` first) and really be a jpeg, png, webp, gif, wav or mp4, judged by its content.
+Uploads are cached by content in `.hf/uploads.json` and reused for up to 7 days, and the Request record lists
+the Inputs it used.
+
+For now `higgs gen` requires `--no-validate` (validation against the catalog is not built yet).
 
 ## Development
 
