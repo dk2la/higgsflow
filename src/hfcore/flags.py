@@ -1,6 +1,6 @@
 """The convenience layer's common flags and how they map onto an Endpoint (DESIGN.md §7).
 
-`higgs video` (and later `higgs image`) take the same flags for every Model; each Endpoint
+`higgs video` and `higgs image` take the same flags for every Model; each Endpoint
 names the matching parameters its own way. `FLAGS` is the alias table: for each flag, the
 parameter names that may carry it, most specific first. `map_flags` picks, per flag, the
 first of them the Endpoint has, whose allowed values (if it lists any) accept the value,
@@ -11,6 +11,12 @@ To support a new flag (`--video`, `--audio`, `--ref`, ...), add a `Flag` here an
 option to the command; to support a new parameter spelling, add it to that flag's
 `params`. `--quality` is special: for a Model with quality tiers in the Mode
 (`Catalog.tiers`) it picks the tier and is not mapped; otherwise it maps like any other flag.
+A repeatable flag (`higgs image --image a.jpg --image b.png`) has a list value: an array
+parameter takes it as it is, a single-value parameter only a one-item list.
+
+A flag whose value is a name to look up (`--soul <name>` → the Soul ID's
+`custom_reference_id`, `--preset <name>`) is still a `Flag` here, with the parameters it
+may land in; the command layer swaps the name for the looked-up value before `map_flags`.
 """
 
 from __future__ import annotations
@@ -40,16 +46,20 @@ FLAGS: dict[str, Flag] = {
         Flag("end_image", "--end-image", ("end_image_url", "last_image_url", "last_frame_url", "tail_image_url")),
         Flag("duration", "--duration", ("duration",)),
         Flag("aspect", "--aspect", ("aspect_ratio",)),
-        # Kling O3/Omni `mode` (std|pro|4k), else `resolution` (720p, 1080p, ...); image Models also have `quality`.
-        Flag("quality", "--quality", ("mode", "resolution", "quality")),
+        # Kling O3/Omni `mode` (std|pro|4k), else `resolution` (720p, 1080p, ...); image Models also have
+        # `quality` (Grok, Marketing Studio: low|medium|high...) and Ideogram's `rendering_speed` (turbo|quality).
+        Flag("quality", "--quality", ("mode", "resolution", "quality", "rendering_speed")),
         Flag("seed", "--seed", ("seed",)),
+        # `higgs image`'s repeatable `--image`: the input/reference images (a list). Kept apart from
+        # video's `image` (the start frame); a single-image parameter takes a one-item list.
+        Flag("images", "--image", ("image_urls", "image_url", "image_reference_url")),
     )
 }
 
 
 # Flags a Mode cannot do without, whatever the Endpoint's schema says (Kling 3.0 t2v has an
 # optional prompt, but a text-to-video Request without one makes no sense).
-MODE_REQUIRED: dict[str, tuple[str, ...]] = {"t2v": ("prompt",), "i2v": ("image",)}
+MODE_REQUIRED: dict[str, tuple[str, ...]] = {"t2v": ("prompt",), "i2v": ("image",), "t2i": ("prompt",)}
 
 # The keys of `project.toml` `[defaults]` (and `[defaults.video]`, `[defaults.image]`) that
 # fill flags that were not given; `model` is the `--model` default.
@@ -60,7 +70,8 @@ def map_flags(endpoint: Endpoint, flags: dict[str, Any]) -> dict[str, Any]:
     """The Endpoint parameters for the given flags (`{"aspect": "16:9"}` → `{"aspect_ratio": "16:9"}`).
 
     Flags whose value is None are skipped. Raises `unsupported_flag` for a flag the
-    Endpoint has no parameter for.
+    Endpoint has no parameter for, and `too_many_values` for a repeatable flag given
+    several times whose parameter takes one value (`--image` twice on Ideogram's `image_url`).
     """
     params: dict[str, Any] = {}
     for key, value in flags.items():
@@ -69,6 +80,12 @@ def map_flags(endpoint: Endpoint, flags: dict[str, Any]) -> dict[str, Any]:
         parameter = flag_parameter(endpoint, key, value)
         if parameter is None:
             raise unsupported(endpoint, key)
+        if isinstance(value, list) and parameter.type != "array" and len(value) > 1:
+            raise HiggsError(
+                f"{FLAGS[key].option} takes one value on {endpoint.model} {endpoint.mode}, got {len(value)}",
+                hint=f"Its {parameter.name} is a single value; pass {FLAGS[key].option} once.",
+                code="too_many_values",
+            )
         params[parameter.name] = convert(parameter, value)
     return params
 
@@ -166,7 +183,10 @@ def convert(parameter: Parameter, value: Any) -> Any:
     """`value` as the parameter's type: `"5"` → 5 for an integer, an allowed value matched case-insensitively.
 
     A value that does not convert is returned as it is, for validation to report.
+    A one-item list (a repeatable flag given once) is that item for a parameter that is not an array.
     """
+    if isinstance(value, list) and parameter.type != "array" and len(value) == 1:
+        value = value[0]
     if parameter.enum is not None and (match := _enum_match(parameter, value)) is not None:
         return match
     if isinstance(value, str):
@@ -192,7 +212,8 @@ def _enum_match(parameter: Parameter, value: Any) -> Any:
 
 
 def unsupported(endpoint: Endpoint, key: str) -> HiggsError:
-    supported = [flag.option for flag in FLAGS.values() if flag_parameter(endpoint, flag.key) is not None]
+    # `--image` is two flags (video's start frame, image's input images), so options are listed once.
+    supported = list(dict.fromkeys(flag.option for flag in FLAGS.values() if flag_parameter(endpoint, flag.key) is not None))
     return HiggsError(
         f"{FLAGS[key].option} is not supported by {endpoint.model} {endpoint.mode}",
         hint=(
