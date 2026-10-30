@@ -15,6 +15,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from hfcore.errors import HiggsError
+from hfcore import naming
+from hfcore.naming import Naming
 from hfcore.projects import Project
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "nsfw", "canceled"})
@@ -48,6 +50,11 @@ class RequestRecord(BaseModel):
     error: str | None = None
     # `X-Correlation-ID` of the submit response, for support.
     correlation_id: str | None = None
+    # Fixed at submit time so `vNN` stays stable for later downloads (DESIGN.md §5).
+    naming: Naming | None = None
+    # When the Generations were last downloaded, and where (paths relative to the Project).
+    downloaded_at: datetime | None = None
+    files: list[str] = []
 
     @property
     def is_terminal(self) -> bool:
@@ -66,6 +73,27 @@ def save_request(project: Project, record: RequestRecord) -> Path:
     tmp.write_text(record.model_dump_json(indent=2) + "\n")
     os.replace(tmp, path)
     return path
+
+
+def list_requests(project: Project) -> list[RequestRecord]:
+    """Every readable Request record of the Project, oldest submit first."""
+    if not project.requests_dir.is_dir():
+        return []
+    records = []
+    for path in project.requests_dir.glob("*.json"):
+        try:
+            records.append(RequestRecord.model_validate_json(path.read_text()))
+        except (ValidationError, OSError):
+            continue  # a hand-edited or foreign file must not break listing
+    return sorted(records, key=lambda record: record.submitted_at)
+
+
+def new_naming(project: Project, endpoint: str, *, prompt: str | None, name: str | None) -> Naming:
+    """The naming of a new Request: `vNN` counts this slug across all the Project's Requests."""
+    model_slug, mode = naming.model_and_mode(endpoint)
+    slug = naming.request_slug(name, prompt)
+    version = naming.next_version((record.naming for record in list_requests(project)), slug)
+    return Naming(model_slug=model_slug, mode=mode, slug=slug, version=version)
 
 
 def load_request(project: Project, request_id: str) -> RequestRecord:

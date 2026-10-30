@@ -7,6 +7,8 @@ JSON document to stdout; on failure it prints `{"error": {...}}` and exits non-z
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Annotated, Any
 
 import typer
@@ -14,6 +16,7 @@ from pydantic import BaseModel
 from rich.console import Console
 from rich.markup import escape
 
+from hfcore.api import RequestStatus
 from hfcore.errors import HiggsError
 
 _JSON_KEY = "higgs.json"
@@ -73,3 +76,13 @@ def render_error(error: HiggsError, *, as_json: bool) -> None:
         if key not in ("code", "message", "hint") and value is not None:
             label = key.replace("_", " ").capitalize()
             err_console.print(f"[dim]{label}:[/] {escape(str(value))}", highlight=False)
+
+
+@contextmanager
+def waiting_status(request_id: str, *, quiet: bool) -> Iterator[Callable[[RequestStatus], None]]:
+    """A spinner with the Request's latest status (on stderr); nothing when `quiet` (JSON mode)."""
+    if quiet:
+        yield lambda status: None
+        return
+    with err_console.status(f"Waiting for Request {request_id}...") as spinner:
+        yield lambda status: spinner.update(f"Request {request_id}: {escape(status.status)}")
