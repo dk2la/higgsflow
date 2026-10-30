@@ -34,6 +34,7 @@ higgs init demo                  # creates ~/hf-projects/demo with the standard 
 higgs projects                   # lists the Projects under the projects root
 higgs models list --mode i2v     # Models with their Family, Modes, quality tiers and "from" price
 higgs models show kling-3.0      # every Endpoint of a Model: parameters, allowed values, prompt limits
+higgs models sync                # refresh the catalog from the live docs into ~/.config/higgs/catalog.json
 cd ~/hf-projects/demo
 higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=4
                                  # validates, submits a Request, waits for it and downloads the Generations
@@ -79,6 +80,8 @@ the JSON Schema keyword that failed (`required`, `type`, `enum`, `maximum`, `max
 A local file path stands in for the URL it will be uploaded to, so `-p image_url=inputs/a.jpg` is valid.
 `--no-validate` skips the check and submits the parameters as they are, to any path, even one missing from the
 catalog (a wrong id is a free 404). An Endpoint id that is not in the catalog fails without `--no-validate`.
+Endpoints that `higgs models sync` found only through `GET /models` (`"source": "api"` in `models show --json`)
+have no schema, so they take any parameters without `--no-validate`.
 
 ### Models missing from the docs: `models.local.toml`
 
@@ -141,7 +144,8 @@ scripts/dev shell              # a shell in the dev container
 scripts/dev catalog            # rebuild src/hfcore/catalog/catalog.json from the snapshots in catalog/
 ```
 
-To refresh the model catalog, replace the snapshots and rebuild:
+Users refresh their own catalog with `higgs models sync` (no rebuild needed). To refresh the catalog
+shipped in the image, replace the snapshots and rebuild:
 
 ```sh
 curl -sSfL https://docs.higgsfield.ai/docs/llms-full.txt -o catalog/llms-full.txt

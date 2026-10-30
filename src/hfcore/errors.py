@@ -27,3 +27,11 @@ class HiggsError(Exception):
         if self.hint:
             data["hint"] = self.hint
         return data
+
+
+class HiggsWarning(UserWarning):
+    """Something the user should know that does not stop the command.
+
+    The core raises it with `warnings.warn`; the CLI prints it to stderr (never to stdout,
+    so `--json` output stays one JSON document).
+    """

@@ -90,6 +90,8 @@ def validate_params(endpoint: Endpoint, params: dict[str, Any], *, cwd: Path) ->
 
 def check_params(endpoint: Endpoint, params: dict[str, Any], *, cwd: Path) -> list[Problem]:
     """Every problem of `params` for `endpoint`; empty when they are valid."""
+    if endpoint.source == "api":
+        return []  # only listed by GET /models: no schema to check against (DESIGN.md §6)
     as_sent = {key: _as_uploaded(value, cwd) for key, value in params.items()}
     validator = Draft202012Validator(endpoint.input_schema, format_checker=_FORMATS)
     found = [*_unknown(endpoint, params), *_tokens(endpoint, params)]

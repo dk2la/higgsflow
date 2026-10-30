@@ -172,6 +172,15 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
   Model + Mode + tier = one Endpoint, and `--quality` (#16) picks the tier the way it picks
   `resolution` or Kling O3's `mode` parameter elsewhere. A tier is recorded only when the Model has
   more than one (Kling 2.6 is all `pro`, so it has none).
+- **Sync.** `higgs models sync` downloads the same two sources live (every pricing page, following
+  `next`), runs the same builder and writes `<config dir>/catalog.json` atomically, then reports the
+  Endpoints added and removed compared with the catalog in effect before (`--json`: `added`, `removed`,
+  `from_api`, `notes`). A docs download or build failure fails the sync (`catalog_sync_failed`) and
+  leaves the previous file untouched; a pricing failure only adds a note and keeps the previous
+  catalog's prices. Layers, bottom up: the baked-in catalog → replaced by the user `catalog.json` →
+  extended by `models.local.toml`; the sync compares the first two only. A user `catalog.json` that
+  cannot be read (hand-edited, or from a higgs version with another format) is ignored with a warning
+  on stderr and the baked-in catalog is used until the next sync rewrites it, so no command breaks.
 - **Prices** are the pricing page's "from" price per Endpoint (USD per second or per image,
   `exact` when it does not vary); a Model's price is the lowest of its Endpoints. Missing for
   Genjutsu Restyle and SOUL Cinema. The exact price always comes from `/estimate`.
@@ -187,8 +196,16 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
      parameter (format in the README). It is layered last in `load_catalog`: new ids add Endpoints (and
      Models/Families), an existing id replaces that Endpoint as a whole. A malformed file is an
      `invalid_models_local` error naming the file;
-  3. `models sync` tries the undocumented `GET /models` with the key and merges the result
-     if it returns anything (the code tolerates any response format).
+  3. `models sync` tries the undocumented `GET /models` with the key (skipped quietly without one)
+     and merges the result if it returns anything usable. Any error or unknown format is only a
+     note. It accepts a list, or an object with a list under `models`/`data`/`results`/`items`/
+     `endpoints`, of Endpoint paths or objects holding one (`endpoint_id`, `endpoint`, `path`,
+     `model_id`, `id`, `slug`, `model`; anything without a `/` is ignored), with an optional name,
+     kind and Mode. An Endpoint the docs lack becomes a minimal Endpoint with `source: "api"`, no
+     parameters and an empty schema, so validation lets any `-p` parameters through rather than
+     requiring `--no-validate`. Its Model is the item's name (Family from it, like the docs) or else
+     the path, and its Mode comes from the path like a docs Endpoint. An item whose kind or Mode
+     cannot be told, or whose Model + Mode is already taken, is skipped with a note, not guessed.
 
 ## 7. Commands
 
