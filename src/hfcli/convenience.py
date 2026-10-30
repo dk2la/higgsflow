@@ -28,6 +28,12 @@ QualityOpt = Annotated[
 ]
 DurationOpt = Annotated[str | None, typer.Option("--duration", "-d", help="Duration in seconds.")]
 AspectOpt = Annotated[str | None, typer.Option("--aspect", "-a", help="Aspect ratio, e.g. 16:9.")]
+ImageOpt = Annotated[
+    str | None, typer.Option("--image", "-i", help="Start image: a file in the Project or a Reference (@name).")
+]
+EndImageOpt = Annotated[
+    str | None, typer.Option("--end-image", help="End image: a file in the Project or a Reference (@name).")
+]
 PromptOpt = Annotated[str | None, typer.Option("--prompt", help="The prompt.")]
 NameOpt = Annotated[
     str | None, typer.Option("--name", help="Slug of the Generation file names (default: first words of the prompt).")

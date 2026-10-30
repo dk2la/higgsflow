@@ -57,3 +57,112 @@ def test_t2v_maps_the_common_flags_onto_the_endpoint_of_the_model_and_tier(
     assert [item["request_id"] for item in output] == ["req-1"]
     assert output[0]["record"]["endpoint"] == "kling-video/v3.0/pro/text-to-video"
     assert (project / ".hf" / "requests" / "req-1.json").is_file()
+
+
+def test_a_model_without_the_mode_fails_and_lists_its_modes(higgs, project, api_key, respx_mock):
+    # Kling O3 has first/last frame, image and video reference and edit, but no text-to-video.
+    result = video(higgs, "t2v", "--model", "kling-o3", "--prompt", "Waves", "--json", "--yes")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "unknown_mode"
+    assert "i2v, ref, vref, edit" in error["hint"]
+    assert not respx_mock.calls
+
+
+UPLOAD_URL_ENDPOINT = f"{API}/files/generate-upload-url"
+STORAGE_URL = "https://storage.example.com/presigned-upload-url"
+# Minimal files that start with the JPEG / PNG magic bytes.
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 32
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+
+def mock_uploads(respx_mock):
+    """Every upload succeeds; the n-th gets the public URL https://cdn.example.com/upload-n."""
+    counter = itertools.count(1)
+    respx_mock.put(STORAGE_URL).mock(return_value=httpx.Response(200))
+
+    def upload_url(request: httpx.Request) -> httpx.Response:
+        content_type = json.loads(request.content)["content_type"]
+        return httpx.Response(
+            200,
+            json={
+                "public_url": f"https://cdn.example.com/upload-{next(counter)}",
+                "upload_url": STORAGE_URL,
+                "content_type": content_type,
+                "upload_headers": {"Content-Type": content_type},
+            },
+        )
+
+    respx_mock.post(UPLOAD_URL_ENDPOINT).mock(side_effect=upload_url)
+
+
+@pytest.fixture
+def images(project):
+    (project / "inputs" / "first.jpg").write_bytes(JPEG)
+    (project / "inputs" / "last.png").write_bytes(PNG)
+
+
+# (model, quality, endpoint, expected body): each Model names the start/end frame and quality its own way.
+I2V_MAPPINGS = [
+    (
+        "kling-3.0", "std", "kling-video/v3.0/std/image-to-video",
+        {"image_url": "https://cdn.example.com/upload-1", "last_image_url": "https://cdn.example.com/upload-2"},
+    ),
+    (
+        "kling-o3", "4k", "kling-video/o3/first-last-frame",
+        {
+            "first_frame_url": "https://cdn.example.com/upload-1",
+            "last_frame_url": "https://cdn.example.com/upload-2",
+            "mode": "4k",
+        },
+    ),
+    (
+        "seedance-2.0", "1080p", "bytedance/seedance-2.0/image-to-video",
+        {
+            "image_url": "https://cdn.example.com/upload-1",
+            "end_image_url": "https://cdn.example.com/upload-2",
+            "resolution": "1080p",
+        },
+    ),
+    (
+        "minimax-h3", "2k", "minimax/h3/image-to-video",  # its only resolution is spelled "2K"
+        {
+            "image_url": "https://cdn.example.com/upload-1",
+            "end_image_url": "https://cdn.example.com/upload-2",
+            "resolution": "2K",
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize(("model", "quality", "endpoint", "expected"), I2V_MAPPINGS)
+def test_i2v_maps_start_and_end_frames_and_quality_per_model(
+    higgs, project, api_key, respx_mock, estimate, images, model, quality, endpoint, expected
+):
+    mock_uploads(respx_mock)
+    route = mock_submit(respx_mock, endpoint)
+
+    result = video(
+        higgs, "i2v", "--model", model, "--quality", quality, "--prompt", "She turns around",
+        "--image", "inputs/first.jpg", "--end-image", "inputs/last.png", "--no-wait", "--json", "--yes",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "She turns around", **expected}
+    record = json.loads(result.output)[0]["record"]
+    assert [item["source"] for item in record["inputs"]] == ["inputs/first.jpg", "inputs/last.png"]
+
+
+def test_a_flag_the_endpoint_has_no_parameter_for_fails_before_any_call(higgs, project, api_key, respx_mock, images):
+    result = video(
+        higgs, "i2v", "--model", "kling-2.6", "--prompt", "She turns around",
+        "--image", "inputs/first.jpg", "--end-image", "inputs/last.png", "--json", "--yes",
+    )
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "unsupported_flag"
+    assert error["message"] == "--end-image is not supported by kling-2.6 i2v"
+    assert "--image" in error["hint"]
+    assert not respx_mock.calls
