@@ -172,6 +172,15 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
   Model + Mode + tier = one Endpoint, and `--quality` (#16) picks the tier the way it picks
   `resolution` or Kling O3's `mode` parameter elsewhere. A tier is recorded only when the Model has
   more than one (Kling 2.6 is all `pro`, so it has none).
+- **Sync.** `higgs models sync` downloads the same two sources live (every pricing page, following
+  `next`), runs the same builder and writes `<config dir>/catalog.json` atomically, then reports the
+  Endpoints added and removed compared with the catalog in effect before (`--json`: `added`, `removed`,
+  `from_api`, `notes`). A docs download or build failure fails the sync (`catalog_sync_failed`) and
+  leaves the previous file untouched; a pricing failure only adds a note and keeps the previous
+  catalog's prices. Layers, bottom up: the baked-in catalog → replaced by the user `catalog.json` →
+  extended by `models.local.toml`; the sync compares the first two only. A user `catalog.json` that
+  cannot be read (hand-edited, or from a higgs version with another format) is ignored with a warning
+  on stderr and the baked-in catalog is used until the next sync rewrites it, so no command breaks.
 - **Prices** are the pricing page's "from" price per Endpoint (USD per second or per image,
   `exact` when it does not vary); a Model's price is the lowest of its Endpoints. Missing for
   Genjutsu Restyle and SOUL Cinema. The exact price always comes from `/estimate`.
@@ -181,9 +190,22 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
      the ID cannot be guessed from the marketing name — take it from the Console/docs/pricing;
      a wrong ID → 404 with no charge;
   2. a manual description in `~/.config/higgs/models.local.toml` (path, parameters, alias) —
-     the model shows up in `models list` and in the convenience commands with validation;
-  3. `models sync` tries the undocumented `GET /models` with the key and merges the result
-     if it returns anything (the code tolerates any response format).
+     the model shows up in `models list` and in the convenience commands with validation.
+     One `[[endpoint]]` table per Endpoint (`id`, `model`, `family`, `mode`, optional `tier`, `price`,
+     `notes`, `[endpoint.prompt]` soft limits) with one `[endpoint.parameters.<name>]` table per
+     parameter (format in the README). It is layered last in `load_catalog`: new ids add Endpoints (and
+     Models/Families), an existing id replaces that Endpoint as a whole. A malformed file is an
+     `invalid_models_local` error naming the file;
+  3. `models sync` tries the undocumented `GET /models` with the key (skipped quietly without one)
+     and merges the result if it returns anything usable. Any error or unknown format is only a
+     note. It accepts a list, or an object with a list under `models`/`data`/`results`/`items`/
+     `endpoints`, of Endpoint paths or objects holding one (`endpoint_id`, `endpoint`, `path`,
+     `model_id`, `id`, `slug`, `model`; anything without a `/` is ignored), with an optional name,
+     kind and Mode. An Endpoint the docs lack becomes a minimal Endpoint with `source: "api"`, no
+     parameters and an empty schema, so validation lets any `-p` parameters through rather than
+     requiring `--no-validate`. Its Model is the item's name (Family from it, like the docs) or else
+     the path, and its Mode comes from the path like a docs Endpoint. An item whose kind or Mode
+     cannot be told, or whose Model + Mode is already taken, is skipped with a note, not guessed.
 
 ## 7. Commands
 
@@ -229,7 +251,12 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 
 ## 8. Generation lifecycle
 
-1. Validate parameters against the catalog schema.
+1. Validate parameters against the catalog schema (`hfcore.validation.validate_params`), on the values as
+   given: the Endpoint's `input_schema` via `jsonschema` (incl. `if`/`then`/`else`, `allOf`), plus
+   parameters the Endpoint does not have and prompt tokens without attached media. A local file path
+   stands in for its future upload URL. All problems are reported at once (`validation_failed`, a list of
+   `{param, constraint, message}`); `--no-validate` skips this step, and only then may the Endpoint be
+   missing from the catalog. The provider's soft prompt limit (`truncated_after`) is not an error.
 2. Local files (`inputs/a.jpg`, `@hero`) are uploaded automatically:
    `POST /files/generate-upload-url` → `PUT` with `upload_headers` → `public_url`.
    Cached by sha256 for 7 days (the API deletes uploads after 7 days); an entry is reused while

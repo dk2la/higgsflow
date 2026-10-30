@@ -78,7 +78,13 @@ class Price(BaseModel):
 
 
 class Endpoint(BaseModel):
-    """One Higgsfield API path with its own parameter schema."""
+    """One Higgsfield API path with its own parameter schema.
+
+    `source` says where the Endpoint comes from: "docs" (the documentation, full schema),
+    "local" (`models.local.toml`) or "api" (listed only by the undocumented `GET /models`
+    during `higgs models sync`: no parameters and an empty `input_schema`, so validation lets
+    any parameters through).
+    """
 
     id: str
     title: str
@@ -93,6 +99,7 @@ class Endpoint(BaseModel):
     price: Price | None = None
     notes: list[str] = []
     input_schema: dict[str, Any]
+    source: str = "docs"
 
     def parameter(self, name: str) -> Parameter:
         for parameter in self.parameters:

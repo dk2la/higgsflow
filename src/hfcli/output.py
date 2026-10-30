@@ -63,6 +63,12 @@ def print_json(data: Any) -> None:
     typer.echo(json.dumps(_jsonable(data), indent=2, ensure_ascii=False))
 
 
+def render_warning(message: str) -> None:
+    """A `HiggsWarning` from the core; always on stderr, so `--json` stdout stays clean."""
+    # Not wrapped: warnings quote file paths the user may copy.
+    err_console.print(f"[bold yellow]Warning:[/] {escape(message)}", highlight=False, soft_wrap=True)
+
+
 def render_error(error: HiggsError, *, as_json: bool) -> None:
     if as_json:
         print_json({"error": error.to_dict()})
@@ -71,9 +77,10 @@ def render_error(error: HiggsError, *, as_json: bool) -> None:
     err_console.print(f"[bold red]Error:[/] {escape(error.message)}", highlight=False)
     if error.hint:
         err_console.print(f"[dim]Hint:[/] {escape(error.hint)}", highlight=False)
-    # Context fields such as the HTTP status and X-Correlation-ID (for support).
+    # Context fields such as the HTTP status and X-Correlation-ID (for support). Lists and
+    # objects (validation problems) are for --json; the message already spells them out.
     for key, value in error.to_dict().items():
-        if key not in ("code", "message", "hint") and value is not None:
+        if key not in ("code", "message", "hint") and value is not None and not isinstance(value, (list, dict)):
             label = key.replace("_", " ").capitalize()
             err_console.print(f"[dim]{label}:[/] {escape(str(value))}", highlight=False)
 
