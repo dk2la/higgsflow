@@ -10,6 +10,8 @@ from typing import Any
 import httpx
 import pytest
 
+from hfcore.catalog.loader import load_baked_in
+
 API = "https://api.higgsfield.ai"
 
 
@@ -152,6 +154,34 @@ def test_i2v_maps_start_and_end_frames_and_quality_per_model(
     assert body(route) == {"prompt": "She turns around", **expected}
     record = json.loads(result.output)[0]["record"]
     assert [item["source"] for item in record["inputs"]] == ["inputs/first.jpg", "inputs/last.png"]
+
+
+CATALOG = load_baked_in()
+T2V_I2V = [endpoint for endpoint in CATALOG.endpoints if endpoint.mode in ("t2v", "i2v")]
+
+
+@pytest.mark.parametrize("endpoint", T2V_I2V, ids=[endpoint.id for endpoint in T2V_I2V])
+def test_every_t2v_and_i2v_endpoint_is_reachable_with_the_common_flags(
+    higgs, project, api_key, respx_mock, estimate, images, endpoint
+):
+    mock_uploads(respx_mock)
+    route = mock_submit(respx_mock, endpoint.id)
+    args = ["--model", endpoint.model, "--prompt", "A quiet harbour at dawn"]
+    if endpoint.tier is not None:
+        args += ["--quality", endpoint.tier]
+    if endpoint.mode == "i2v":
+        args += ["--image", "inputs/first.jpg"]
+    if endpoint.parameter("duration").required:
+        args += ["--duration", str(endpoint.parameter("duration").default)]
+
+    result = video(higgs, endpoint.mode, *args, "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    sent = body(route)
+    assert sent["prompt"] == "A quiet harbour at dawn"
+    if endpoint.mode == "i2v":
+        [image_param] = [name for name, value in sent.items() if value == "https://cdn.example.com/upload-1"]
+        assert image_param in {parameter.name for parameter in endpoint.parameters}
 
 
 def test_a_flag_the_endpoint_has_no_parameter_for_fails_before_any_call(higgs, project, api_key, respx_mock, images):
