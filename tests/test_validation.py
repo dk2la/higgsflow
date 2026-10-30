@@ -31,7 +31,7 @@ def gen(higgs, endpoint: str, *params: str, flags: tuple[str, ...] = ()):
     args = ["gen", endpoint]
     for param in params:
         args += ["-p", param]
-    return higgs(*args, "--no-wait", "--json", *flags)
+    return higgs(*args, "--no-wait", "--json", "--yes", *flags)
 
 
 def problems(result) -> list[dict[str, Any]]:
@@ -136,7 +136,7 @@ def submitted() -> httpx.Response:
     return httpx.Response(200, json=SUBMITTED)
 
 
-def test_valid_parameters_are_submitted(higgs, project, api_key, respx_mock):
+def test_valid_parameters_are_submitted(higgs, project, api_key, respx_mock, estimate):
     route = respx_mock.post(f"{API}/{KLING_I2V}").mock(return_value=submitted())
 
     result = gen(
@@ -149,7 +149,7 @@ def test_valid_parameters_are_submitted(higgs, project, api_key, respx_mock):
     assert (project / ".hf" / "requests" / f"{REQUEST_ID}.json").is_file()
 
 
-def test_a_local_file_satisfies_a_url_parameter_and_is_uploaded(higgs, project, api_key, respx_mock):
+def test_a_local_file_satisfies_a_url_parameter_and_is_uploaded(higgs, project, api_key, respx_mock, estimate):
     # Ads Studio: image_urls items must match ^https?:// — true once the file is uploaded.
     (project / "inputs" / "a.jpg").write_bytes(JPEG)
     respx_mock.post(f"{API}/files/generate-upload-url").mock(
@@ -172,7 +172,7 @@ def test_a_local_file_satisfies_a_url_parameter_and_is_uploaded(higgs, project, 
     assert json.loads(route.calls.last.request.content)["image_urls"] == [PUBLIC_URL]
 
 
-def test_no_validate_submits_parameters_the_catalog_would_reject(higgs, project, api_key, respx_mock):
+def test_no_validate_submits_parameters_the_catalog_would_reject(higgs, project, api_key, respx_mock, estimate):
     route = respx_mock.post(f"{API}/{KLING_I2V}").mock(return_value=submitted())
 
     result = gen(higgs, KLING_I2V, "duration=20", flags=("--no-validate",))
@@ -192,7 +192,7 @@ def test_an_unknown_endpoint_fails_with_a_hint_to_skip_or_describe_it(higgs, pro
     assert not respx_mock.calls
 
 
-def test_an_unknown_endpoint_with_no_validate_is_submitted(higgs, project, api_key, respx_mock):
+def test_an_unknown_endpoint_with_no_validate_is_submitted(higgs, project, api_key, respx_mock, estimate):
     route = respx_mock.post(f"{API}/kling-video/v4.0/pro/image-to-video").mock(return_value=submitted())
 
     result = gen(higgs, "kling-video/v4.0/pro/image-to-video", "prompt=a cat", flags=("--no-validate",))

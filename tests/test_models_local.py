@@ -55,7 +55,7 @@ def gen(higgs, endpoint: str, *params: str):
     args = ["gen", endpoint]
     for param in params:
         args += ["-p", param]
-    return higgs(*args, "--no-wait", "--json")
+    return higgs(*args, "--no-wait", "--json", "--yes")
 
 
 def submitted() -> httpx.Response:
@@ -131,7 +131,7 @@ def test_gen_validates_against_a_local_model(higgs, config_dir, project, api_key
     assert not respx_mock.calls
 
 
-def test_gen_submits_valid_parameters_to_a_local_model(higgs, config_dir, project, api_key, respx_mock):
+def test_gen_submits_valid_parameters_to_a_local_model(higgs, config_dir, project, api_key, respx_mock, estimate):
     write_local(config_dir, KLING_4)
     route = respx_mock.post(f"https://api.higgsfield.ai/{LOCAL_ID}").mock(return_value=submitted())
 
@@ -145,7 +145,9 @@ def test_gen_submits_valid_parameters_to_a_local_model(higgs, config_dir, projec
     }
 
 
-def test_a_local_entry_with_a_documented_id_replaces_that_endpoint(higgs, config_dir, project, api_key, respx_mock):
+def test_a_local_entry_with_a_documented_id_replaces_that_endpoint(
+    higgs, config_dir, project, api_key, respx_mock, estimate
+):
     # SOUL 2.0 documents batch_size as 1 or 4; the local description allows 2 as well.
     write_local(
         config_dir,

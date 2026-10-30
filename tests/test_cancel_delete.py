@@ -23,7 +23,7 @@ SUBMITTED = {
 def submit(higgs, respx_mock, *args: str) -> None:
     """Submit a Request through the CLI, so its record exists in the Project."""
     respx_mock.post(f"https://api.higgsfield.ai/{ENDPOINT}").mock(return_value=httpx.Response(200, json=SUBMITTED))
-    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--no-wait", "--json", *args)
+    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--no-wait", "--json", "--yes", *args)
     assert result.exit_code == 0, result.output
 
 
@@ -31,7 +31,7 @@ def record_of(project: Path) -> Any:
     return json.loads((project / ".hf" / "requests" / f"{REQUEST_ID}.json").read_text())
 
 
-def test_cancel_of_a_queued_request_marks_it_canceled(higgs, project, api_key, respx_mock):
+def test_cancel_of_a_queued_request_marks_it_canceled(higgs, project, api_key, respx_mock, estimate):
     submit(higgs, respx_mock)
     # The docs: "A successful cancellation returns 202 Accepted with an empty body."
     route = respx_mock.post(CANCEL_URL).mock(return_value=httpx.Response(202))
@@ -48,7 +48,7 @@ def test_cancel_of_a_queued_request_marks_it_canceled(higgs, project, api_key, r
     assert output["record"] == record
 
 
-def test_cancel_of_an_in_progress_request_reports_it_cannot_be_canceled(higgs, project, api_key, respx_mock):
+def test_cancel_of_an_in_progress_request_reports_it_cannot_be_canceled(higgs, project, api_key, respx_mock, estimate):
     submit(higgs, respx_mock)
     # The docs: "If processing has started, the API returns 400 Bad Request." (FastAPI envelope)
     respx_mock.post(CANCEL_URL).mock(
@@ -68,7 +68,7 @@ def test_cancel_of_an_in_progress_request_reports_it_cannot_be_canceled(higgs, p
     assert record_of(project)["status"] == "queued"
 
 
-def test_delete_records_the_deletion_and_leaves_local_files_in_place(higgs, project, api_key, respx_mock):
+def test_delete_records_the_deletion_and_leaves_local_files_in_place(higgs, project, api_key, respx_mock, estimate):
     submit(higgs, respx_mock)
     generation = project / "generations" / "2026-10-30" / "20261030-1200_soul_t2i_a-cat_v01.png"
     generation.parent.mkdir(parents=True)
@@ -95,7 +95,7 @@ def test_delete_records_the_deletion_and_leaves_local_files_in_place(higgs, proj
     assert output["record"] == record
 
 
-def test_delete_of_an_active_request_reports_the_conflict(higgs, project, api_key, respx_mock):
+def test_delete_of_an_active_request_reports_the_conflict(higgs, project, api_key, respx_mock, estimate):
     submit(higgs, respx_mock)
     # The docs: "A request that is still queued or in_progress returns 409 Conflict." (FastAPI envelope)
     respx_mock.delete(DELETE_URL).mock(
@@ -117,7 +117,7 @@ def test_delete_of_an_active_request_reports_the_conflict(higgs, project, api_ke
 
 
 @pytest.mark.parametrize(("command", "method", "url"), [("cancel", "POST", CANCEL_URL), ("delete", "DELETE", DELETE_URL)])
-def test_a_request_unknown_to_the_api_is_reported_as_such(higgs, project, api_key, respx_mock, command, method, url):
+def test_a_request_unknown_to_the_api_is_reported_as_such(higgs, project, api_key, respx_mock, estimate, command, method, url):
     submit(higgs, respx_mock)
     # The docs: 404 means "The request does not exist or belongs to another account."
     respx_mock.route(method=method, url=url).mock(return_value=httpx.Response(404, json={"detail": "Not Found"}))
@@ -143,7 +143,7 @@ def test_a_request_id_without_a_local_record_fails_without_calling_the_api(
     assert not respx_mock.calls
 
 
-def test_project_option_cancels_a_request_of_another_project(higgs, project, projects_root, api_key, respx_mock):
+def test_project_option_cancels_a_request_of_another_project(higgs, project, projects_root, api_key, respx_mock, estimate):
     higgs("init", "other")
     submit(higgs, respx_mock, "--project", "other")
     respx_mock.post(CANCEL_URL).mock(return_value=httpx.Response(202))
@@ -161,7 +161,7 @@ def test_project_option_cancels_a_request_of_another_project(higgs, project, pro
         ("delete", httpx.Response(200, json={"request_id": REQUEST_ID, "status": "deleted"}), "local files are kept"),
     ],
 )
-def test_cancel_and_delete_as_text_name_the_request(higgs, project, api_key, respx_mock, command, response, expected):
+def test_cancel_and_delete_as_text_name_the_request(higgs, project, api_key, respx_mock, estimate, command, response, expected):
     submit(higgs, respx_mock)
     respx_mock.route(url__startswith=DELETE_URL).mock(return_value=response)
 

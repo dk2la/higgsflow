@@ -6,6 +6,9 @@ from typing import Any
 import httpx
 import pytest
 
+# Every test submits, and every submit is preceded by an estimate.
+pytestmark = pytest.mark.usefixtures("estimate")
+
 ENDPOINT = "higgsfield-ai/soul/v2/standard"
 SUBMIT_URL = f"https://api.higgsfield.ai/{ENDPOINT}"
 REQUEST_ID = "d7e6c0f3-6699-4f6c-bb45-2ad7fd9158ff"
@@ -40,7 +43,7 @@ def test_a_completed_request_downloads_its_generation_with_metadata(higgs, proje
     respx_mock.get("https://cdn.example.com/image-1.jpg").mock(return_value=httpx.Response(200, content=b"jpeg-1"))
 
     result = higgs(
-        "gen", ENDPOINT, "-p", "prompt=Editorial portrait in soft daylight", "--no-validate", "--json"
+        "gen", ENDPOINT, "-p", "prompt=Editorial portrait in soft daylight", "--no-validate", "--json", "--yes"
     )
 
     assert result.exit_code == 0, result.output
@@ -75,7 +78,7 @@ def mock_completed_image(respx_mock, *statuses: httpx.Response | Exception):
 
 
 def gen(higgs, *args: str):
-    return higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--json", *args)
+    return higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--json", "--yes", *args)
 
 
 def test_polling_backs_off_from_two_seconds_to_at_most_ten_with_jitter(higgs, project, api_key, respx_mock, clock):
@@ -194,14 +197,14 @@ def test_an_unsuccessful_request_is_recorded_and_downloads_nothing(
     assert record["status"] == body["status"]
     assert record["error"] == body.get("error")
     assert not any((project / "generations").iterdir())
-    assert len(respx_mock.calls) == 3  # submit and two status checks, no download
+    assert len(respx_mock.calls) == 4  # estimate, submit and two status checks, no download
 
 
 def test_a_failed_request_as_text_says_why(higgs, project, api_key, respx_mock):
     respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(200, json=SUBMITTED))
     respx_mock.get(STATUS_URL).mock(return_value=status(UNSUCCESSFUL[0][0]))
 
-    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate")
+    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--yes")
 
     assert result.exit_code == 1
     output = " ".join(result.output.split())
@@ -212,7 +215,7 @@ def test_a_failed_request_as_text_says_why(higgs, project, api_key, respx_mock):
 def test_a_completed_request_as_text_lists_the_downloaded_files(higgs, project, api_key, respx_mock):
     mock_completed_image(respx_mock, status(IN_PROGRESS))
 
-    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate")
+    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--yes")
 
     assert result.exit_code == 0, result.output
     assert f"Completed Request {REQUEST_ID}" in result.output

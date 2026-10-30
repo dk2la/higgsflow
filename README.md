@@ -171,6 +171,28 @@ merged with the documented one), so it can correct or extend a schema. A malform
 key, an unknown mode, a duplicate id, a second untiered Endpoint for the same Model and Mode) fails every
 catalog command with an error naming the file and the problem.
 
+### Price, Spend and Budget
+
+After validation and uploads, `higgs gen` asks the API for the exact price (`POST /estimate/{endpoint}`, free)
+of the body it is about to send, also with `--no-validate`, shows it and asks for confirmation; `--yes`
+confirms without asking. `--no-input` never prompts, and `--json` implies it, so both fail with
+`confirmation_required` (the error carries `price_usd`) unless `--yes` is given. A failed estimate submits
+nothing. The price is stored on the Request record (`estimate_usd`) and in each Generation's `.json`
+(`price_usd`). A Project's Spend is the sum of the prices of its `completed` Requests. An optional Budget in
+USD goes at the top level of `project.toml`:
+
+```toml
+name = "demo"
+budget = 20.0
+
+[defaults]
+```
+
+When Spend plus the new price exceeds it, `higgs gen` prints a warning and still asks (with `--yes` it only
+warns); it never blocks. In JSON mode the warning is in the output's `warnings` list as
+`{"code": "over_budget", "message": ..., "spend_usd": ..., "price_usd": ..., "budget_usd": ...}`; money is
+always a decimal string.
+
 ## Development
 
 Development, type checking and tests run in the same container:

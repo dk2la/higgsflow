@@ -15,7 +15,7 @@ def submit(higgs, project, respx_mock):
     route = respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(200, json=SUBMITTED))
 
     def run():
-        result = higgs("gen", "higgsfield-ai/soul/v2/standard", "--no-validate", "--no-wait", "--json")
+        result = higgs("gen", "higgsfield-ai/soul/v2/standard", "--no-validate", "--no-wait", "--json", "--yes")
         if result.exit_code != 0:
             return result
         return route.calls.last.request.headers["Authorization"]
@@ -23,7 +23,7 @@ def submit(higgs, project, respx_mock):
     return run
 
 
-def test_hf_key_env_var_beats_the_credentials_file(submit, api_key, monkeypatch):
+def test_hf_key_env_var_beats_the_credentials_file(submit, estimate, api_key, monkeypatch):
     monkeypatch.setenv("HF_KEY", "env-id:env-secret")
     monkeypatch.setenv("HF_API_KEY", "other-id")
     monkeypatch.setenv("HF_API_SECRET", "other-secret")
@@ -31,14 +31,14 @@ def test_hf_key_env_var_beats_the_credentials_file(submit, api_key, monkeypatch)
     assert submit() == "Key env-id:env-secret"
 
 
-def test_hf_api_key_and_secret_env_vars_beat_the_credentials_file(submit, api_key, monkeypatch):
+def test_hf_api_key_and_secret_env_vars_beat_the_credentials_file(submit, estimate, api_key, monkeypatch):
     monkeypatch.setenv("HF_API_KEY", "env-id")
     monkeypatch.setenv("HF_API_SECRET", "env-secret")
 
     assert submit() == "Key env-id:env-secret"
 
 
-def test_the_credentials_file_is_used_without_env_vars(submit, api_key):
+def test_the_credentials_file_is_used_without_env_vars(submit, estimate, api_key):
     assert submit() == api_key
 
 

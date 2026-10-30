@@ -9,7 +9,10 @@ from typing import Any
 import httpx
 import pytest
 
-SOUL = "higgsfield-ai/soul/v2/standard"
+# Every test submits, and every submit is preceded by an estimate.
+pytestmark = pytest.mark.usefixtures("estimate")
+
+SOUL ="higgsfield-ai/soul/v2/standard"
 KLING_I2V = "kling-video/v3.0/pro/image-to-video"
 
 _ids = count(1)
@@ -31,7 +34,7 @@ def generate(higgs, respx_mock, *args: str, endpoint: str = SOUL, outputs: dict[
     )
     for url, content in files.items():
         respx_mock.get(url).mock(return_value=httpx.Response(200, content=content))
-    result = higgs("gen", endpoint, *args, "--no-validate", "--json")
+    result = higgs("gen", endpoint, *args, "--no-validate", "--json", "--yes")
     assert result.exit_code == 0, result.output
     return json.loads(result.output)
 
@@ -90,7 +93,7 @@ def test_a_corrupt_user_catalog_is_warned_about_once(higgs, project, api_key, re
         return_value=httpx.Response(200, json={"status": "queued", "request_id": request_id})
     )
 
-    result = higgs("gen", SOUL, "-p", "prompt=a cat", "--no-wait", "--json")
+    result = higgs("gen", SOUL, "-p", "prompt=a cat", "--no-wait", "--json", "--yes")
 
     assert result.exit_code == 0, result.output
     assert result.stderr.count("Ignoring the user catalog") == 1

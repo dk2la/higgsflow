@@ -122,6 +122,10 @@ name, so a picked file stays self-contained (no symlinks).
   `already_picked: true`.
 - The copying is `hfcore.generations.copy_generation(generation, folder)` (same names, reusable for any folder).
 
+**`project.toml`:** `name`, an optional top-level `budget` (USD, a number ≥ 0, e.g. `budget = 20.0`)
+and a `[defaults]` table. Unknown keys are kept; an unreadable file or invalid `budget` fails a paid
+command with `invalid_project_config` before anything is submitted.
+
 **Current project:** like git, the CLI walks up from the current directory to the nearest
 `project.toml`; `--project <name>` overrides it. There is no global "active project".
 Outside a project, project-scoped commands fail with a hint to run `higgs init` or pass `--project`.
@@ -293,6 +297,11 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
    Display, confirmation (`--yes` skips it), project `budget` check. Project spend is the sum of the
    estimated prices of `completed` Requests (failed/nsfw/canceled are not billed). If spend + this price
    exceeds `budget`: a warning plus confirmation; with `--yes` only the warning, never a block.
+   No price, no submit: a failed estimate is an error. The price is stored on the Request record
+   (`estimate_usd`) and in the Generation metadata (`price_usd`); money is a `Decimal`, a string in JSON.
+   In JSON mode the over-Budget warning goes into the output's `warnings` list (`code: over_budget`), and a
+   missing `--yes` fails with `confirmation_required` carrying `price_usd` and `warnings`. `--count N`
+   estimates every Request and confirms their total once.
 4. Submit `POST /{endpoint}` with an `Idempotency-Key` (UUID); immediately write `.hf/requests/<request_id>.json`.
    A network failure, timeout or `5xx` (other than a disabled model) and a `429` (after `Retry-After`) are
    retried a few times with the same key, so a retried submit is never billed twice.

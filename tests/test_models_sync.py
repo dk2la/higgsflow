@@ -231,7 +231,7 @@ def test_endpoints_from_get_models_missing_in_the_docs_are_merged(higgs, serve, 
 
 
 def test_an_endpoint_from_get_models_takes_any_parameters_without_no_validate(
-    higgs, serve, project, api_key, respx_mock
+    higgs, serve, project, api_key, respx_mock, estimate
 ):
     serve()
     respx_mock.get(MODELS_URL).respond(200, json=API_MODELS)
@@ -241,7 +241,8 @@ def test_an_endpoint_from_get_models_takes_any_parameters_without_no_validate(
     )
 
     result = higgs(
-        "gen", "kling-video/v4.0/text-to-video", "-p", "prompt=Waves at dusk", "-p", "duration=7", "--no-wait", "--json"
+        "gen", "kling-video/v4.0/text-to-video", "-p", "prompt=Waves at dusk", "-p", "duration=7",
+        "--no-wait", "--json", "--yes",
     )
 
     assert result.exit_code == 0, result.output
