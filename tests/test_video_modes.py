@@ -328,15 +328,7 @@ def test_restyle_takes_its_preset_as_a_parameter(higgs, project, api_key, respx_
     )
     assert result.exit_code == 0, result.output
     assert body(route) == {"video_url": upload(1), "image_urls": [upload(2)], "preset_id": preset}
-
-    # Without one it fails validation before anything is uploaded.
-    calls = len(respx_mock.calls)
-    result = video(higgs, "restyle", "--model", "genjutsu", "--video", "inputs/clip.mp4", "--json", "--yes")
-    assert result.exit_code == 1
-    error = json.loads(result.output)["error"]
-    assert error["code"] == "validation_failed"
-    assert [(p["param"], p["constraint"]) for p in error["problems"]] == [("preset_id", "required")]
-    assert len(respx_mock.calls) == calls
+    # Without one, it is asked for as --preset (tests/test_presets.py).
 
 
 def test_a_reference_the_endpoint_requires_is_asked_for(higgs, project, api_key, respx_mock, estimate, media):

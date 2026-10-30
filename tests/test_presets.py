@@ -11,6 +11,10 @@ import httpx
 import respx
 
 from hfcore.catalog.loader import load_baked_in
+from tests.test_video import mock_uploads
+from tests.test_video_modes import MP4
+
+UPLOAD_1 = "https://cdn.example.com/upload-1"
 
 API = "https://api.higgsfield.ai"
 
@@ -347,3 +351,53 @@ def test_a_preset_name_shared_by_several_presets_fails_listing_their_ids(higgs, 
     assert "6f1d2c3b-0000-4000-8000-000000000001 (Editorial)" in error["hint"]
     assert "6f1d2c3b-0000-4000-8000-000000000002 (Product)" in error["hint"]
     assert not route.called
+
+
+def mock_restyle_presets(respx_mock: respx.MockRouter) -> None:
+    respx_mock.get(f"{API}/models/higgsfield/genjutsu/restyle/v1.0/presets").mock(
+        return_value=httpx.Response(200, json=RESTYLE_PRESETS)
+    )
+
+
+def restyle(higgs, *args: str):
+    return higgs("video", "restyle", "--model", "genjutsu", "--video", "inputs/clip.mp4", *args, "--no-wait", "--json", "--yes")
+
+
+def test_preset_on_video_restyle_sends_the_preset_id_of_the_named_restyle_preset(
+    higgs, project, api_key, respx_mock, estimate
+):
+    (project / "inputs" / "clip.mp4").write_bytes(MP4)
+    mock_uploads(respx_mock)
+    mock_restyle_presets(respx_mock)
+    route = mock_submit(respx_mock, "higgsfield/genjutsu/restyle/v1.0")
+
+    result = restyle(higgs, "--preset", "cel-shaded cg anime")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"video_url": UPLOAD_1, "preset_id": "c2143317-f28d-4c3c-a0b8-39bd547e08a7"}
+
+
+def test_video_restyle_without_a_preset_asks_for_it(higgs, project, api_key, respx_mock, estimate):
+    # Its schema requires preset_id; --json never prompts, so it fails naming --preset.
+    (project / "inputs" / "clip.mp4").write_bytes(MP4)
+
+    error = error_of(restyle(higgs))
+
+    assert error["code"] == "missing_param"
+    assert error["message"] == "Missing --preset"
+    assert not respx_mock.calls
+
+
+def test_a_preset_name_given_at_the_prompt_is_looked_up_too(higgs, project, api_key, respx_mock, estimate):
+    (project / "inputs" / "clip.mp4").write_bytes(MP4)
+    mock_uploads(respx_mock)
+    mock_restyle_presets(respx_mock)
+    route = mock_submit(respx_mock, "higgsfield/genjutsu/restyle/v1.0")
+
+    result = higgs(
+        "video", "restyle", "--model", "genjutsu", "--video", "inputs/clip.mp4", "--no-wait", "--yes",
+        input="Cel-Shaded CG Anime\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route)["preset_id"] == "c2143317-f28d-4c3c-a0b8-39bd547e08a7"
