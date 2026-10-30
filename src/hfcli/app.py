@@ -11,7 +11,7 @@ from typer.core import TyperGroup
 
 from hfcore import __version__
 from hfcore.errors import HiggsError, HiggsWarning
-from hfcli import auth, gen, image, models, pick, projects, references, request_actions, tracking, usage, video
+from hfcli import auth, gen, image, models, pick, presets, projects, references, request_actions, tracking, usage, video
 from hfcli.output import JsonOpt, json_mode, print_json, render_error, render_warning
 
 
@@ -84,6 +84,7 @@ app.add_typer(models.app)
 app.add_typer(references.app)
 app.add_typer(video.app)
 app.add_typer(image.app)
+app.add_typer(presets.app)
 
 
 def main() -> None:

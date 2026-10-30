@@ -53,6 +53,9 @@ FLAGS: dict[str, Flag] = {
         # `higgs image`'s repeatable `--image`: the input/reference images (a list). Kept apart from
         # video's `image` (the start frame); a single-image parameter takes a one-item list.
         Flag("images", "--image", ("image_urls", "image_url", "image_reference_url")),
+        # A Preset's id, once `hfcore.presets.find_preset` has looked the name up: SOUL's
+        # `style_id`, Genjutsu Restyle's and Marketing Studio's `preset_id`.
+        Flag("preset", "--preset", ("style_id", "preset_id")),
     )
 }
 
