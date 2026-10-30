@@ -63,6 +63,20 @@ into the Project's `inputs/` first) and really be a jpeg, png, webp, gif, wav or
 Uploads are cached by content in `.hf/uploads.json` and reused for up to 7 days, and the Request record lists
 the Inputs it used.
 
+A value `@name` is a Reference: the file `references/<name>.<ext>`, uploaded like any Input
+(`-p image_url=@hero`, also inside lists and objects). Any file in `references/` is a Reference (its `.json`
+metadata is not), and a name must be unique regardless of extension: `@hero` with both `hero.png` and
+`hero.mp4` fails and lists them, and an unknown name fails and lists the Project's References. To send a
+literal string starting with `@`, double it: `-p style=@@hero` sends `@hero` (text with spaces such as
+`-p "prompt=@hero walks in"` is never a Reference).
+
+```sh
+higgs ref save generations/2026-10-30/<file>.png hero   # copies the Generation + its .json to references/hero.png
+higgs ref save <file>.png hero --force                  # a bare Generation file name works too; --force replaces
+                                                        # an existing @hero (any extension) and its .json
+higgs ref list                                          # References with type, size and source Generation
+```
+
 For now `higgs gen` requires `--no-validate` (validation against the catalog is not built yet).
 
 ## Development

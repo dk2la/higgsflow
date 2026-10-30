@@ -9,6 +9,12 @@ Which values are files: a string value is an Input when it names an existing fil
 (relative to `cwd`, or absolute), or when it looks like a path to a media file (ends in
 an allowed extension such as `.jpg`), in which case a missing file is an error rather
 than a string silently sent to the API. URLs (`scheme://...`) are never Inputs.
+
+A value `@name` (no spaces) is a Reference: the one file `references/<name>.<ext>`
+(`hfcore.references`), uploaded and recorded like any Input with `source="@name"`.
+A value starting with `@@` is sent with one `@` removed and is never a file (`@@hero` →
+`@hero`); other strings starting with `@` but containing whitespace are plain strings.
+Convenience flags (`--image @hero`) pass their values through here and get the same rules.
 """
 
 from __future__ import annotations
@@ -21,7 +27,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from hfcore import config, uploads
+from hfcore import config, references, uploads
 from hfcore.api import ApiClient
 from hfcore.errors import HiggsError
 from hfcore.projects import Project
@@ -73,19 +79,22 @@ def resolve_inputs(client: ApiClient, project: Project, params: dict[str, Any], 
     """Upload every local file in `params` and replace it by its `public_url`.
 
     Every file is checked before the first upload, so one bad file uploads nothing.
+    A value starting with `@@` is sent with one `@` removed and is never a file.
     """
-    found = [
-        _check(param, value, path, project)
-        for key, top in params.items()
-        for param, value in _strings(top, key)
-        if (path := _locate(value, cwd)) is not None
-    ]
+    # The string at each param (as `_strings` walks) that replaces the given value.
+    replacements: dict[str, str] = {}
+    found: list[_Found] = []
+    for key, top in params.items():
+        for param, value in _strings(top, key):
+            if (literal := references.unescape(value)) is not None:
+                replacements[param] = literal
+            elif (path := _locate(value, cwd, project)) is not None:
+                found.append(_check(param, value, path, project))
 
-    urls: dict[str, str] = {}
     inputs: list[Input] = []
     for item in found:
         uploaded = uploads.upload(client, project, item.path, sha256=item.sha256, content_type=item.content_type)
-        urls[item.param] = uploaded.public_url
+        replacements[item.param] = uploaded.public_url
         inputs.append(
             Input(
                 param=item.param,
@@ -96,7 +105,7 @@ def resolve_inputs(client: ApiClient, project: Project, params: dict[str, Any], 
                 public_url=uploaded.public_url,
             )
         )
-    resolved = {key: _replace(value, key, urls) for key, value in params.items()}
+    resolved = {key: _replace(value, key, replacements) for key, value in params.items()}
     return ResolvedParams(params=resolved, inputs=inputs)
 
 
@@ -112,22 +121,23 @@ def _strings(value: Any, param: str) -> Iterator[tuple[str, str]]:
             yield from _strings(item, f"{param}.{key}")
 
 
-def _replace(value: Any, param: str, urls: dict[str, str]) -> Any:
-    """`value` with the string at each param in `urls` replaced by its URL (as `_strings` walks)."""
+def _replace(value: Any, param: str, replacements: dict[str, str]) -> Any:
+    """`value` with the string at each param in `replacements` replaced (as `_strings` walks)."""
     if isinstance(value, str):
-        return urls.get(param, value)
+        return replacements.get(param, value)
     if isinstance(value, list):
-        return [_replace(item, f"{param}[{index}]", urls) for index, item in enumerate(value)]
+        return [_replace(item, f"{param}[{index}]", replacements) for index, item in enumerate(value)]
     if isinstance(value, dict):
-        return {key: _replace(item, f"{param}.{key}", urls) for key, item in value.items()}
+        return {key: _replace(item, f"{param}.{key}", replacements) for key, item in value.items()}
     return value
 
 
-def _locate(value: str, cwd: Path) -> Path | None:
+def _locate(value: str, cwd: Path, project: Project) -> Path | None:
     """The local file a param value names, or None when it is a plain string."""
+    if (name := references.reference_name(value)) is not None:
+        return references.resolve_reference(project, name)
     if "://" in value or "\n" in value:
         return None
-    # References (`@name`, #19) will resolve here to their file in `references/`.
     try:
         path = cwd / Path(value).expanduser()  # an absolute value stays absolute
         if path.is_file() or path.suffix.lower() in MEDIA_EXTENSIONS:
