@@ -9,6 +9,7 @@ from typer.core import TyperGroup
 
 from hfcore import __version__
 from hfcore.errors import HiggsError
+from hfcli import projects
 from hfcli.output import JsonOpt, json_mode, print_json, render_error
 
 
@@ -49,6 +50,10 @@ def root(
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())
         raise typer.Exit()
+
+
+app.command()(projects.init)
+app.command("projects")(projects.list_projects)
 
 
 def main() -> None:
