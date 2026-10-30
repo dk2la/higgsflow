@@ -7,11 +7,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Editable install: the dev script mounts the repo over /app and runs the
-# tests against the live source without rebuilding.
+# Dependencies first, keyed only on pyproject.toml, so a source change does not
+# reinstall them. Editable install: the dev script mounts the repo over /app and
+# runs against the live source without rebuilding.
 COPY pyproject.toml README.md ./
-COPY src ./src
-RUN pip install -e ".[dev]"
+RUN mkdir -p src/hfcore src/hfcli \
+    && touch src/hfcore/__init__.py src/hfcli/__init__.py \
+    && pip install -e ".[dev]"
 
 COPY . .
 
