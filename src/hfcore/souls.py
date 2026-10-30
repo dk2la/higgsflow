@@ -272,6 +272,22 @@ def record_status(soul: Soul, status: CustomReference) -> Soul:
     return soul
 
 
+class SoulTrainingFailed(HiggsError):
+    """A training that ended `failed`; the Soul ID stays registered with its `fail_reason`."""
+
+    def __init__(self, soul: Soul):
+        detail = f": {soul.fail_reason}" if soul.fail_reason else ""
+        super().__init__(
+            f"Training Soul ID {soul.name} failed{detail}",
+            hint=f"Train again with other images: higgs soul train {soul.name} <images...> --force.",
+            code="soul_training_failed",
+        )
+        self.soul_id = soul.id
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**super().to_dict(), "id": self.soul_id}
+
+
 def load_souls() -> dict[str, Soul]:
     """Every registered Soul ID by name; an empty registry when there is no `souls.toml` yet."""
     path = souls_path()

@@ -14,10 +14,11 @@ from typing import Annotated, Any
 
 import typer
 from rich.markup import escape
+from rich.table import Table
 
 from hfcore import credentials, souls
 from hfcore.api import ApiClient
-from hfcli.output import JsonOpt, err_console, print_json
+from hfcli.output import JsonOpt, console, err_console, print_json
 from hfcli.projects import ProjectOpt, current_project
 
 app = typer.Typer(
@@ -49,10 +50,30 @@ def train(
         if not no_wait:
             with _waiting(soul, quiet=as_json) as on_progress:
                 soul = souls.wait_for_soul(client, soul, on_progress=on_progress)
+    if soul.status == "failed":
+        raise souls.SoulTrainingFailed(soul)
     if as_json:
         print_json(_soul_json(soul))
         return
     typer.echo(f"Soul ID {soul.name} ({soul.version}): {soul.status}")
+
+
+@app.command("list")
+def list_souls(as_json: JsonOpt = False) -> None:
+    """List the registered Soul IDs (from souls.toml; the API cannot list them)."""
+    found = sorted(souls.load_souls().values(), key=lambda soul: soul.name)
+    if as_json:
+        print_json({"souls": found, "path": str(souls.souls_path())})
+        return
+    if not found:
+        typer.echo("No Soul IDs registered yet. Train one with `higgs soul train <name> <images...>`.")
+        return
+    table = Table()
+    for header in ("Name", "Version", "Status", "Id"):
+        table.add_column(header, no_wrap=True)
+    for soul in found:
+        table.add_row(escape(soul.name), soul.version, escape(soul.status), soul.id)
+    console.print(table)
 
 
 @app.command("status")

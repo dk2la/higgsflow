@@ -288,3 +288,48 @@ def test_bad_arguments_fail_before_any_upload(higgs, project, photos, api_key, r
     assert json.loads(result.output)["error"]["code"] == code
     assert not respx_mock.calls
     assert not (config_dir / "souls.toml").exists()
+
+
+def test_a_failed_training_fails_the_command_and_is_recorded(higgs, project, photos, api_key, respx_mock, config_dir):
+    mock_uploads(respx_mock)
+    respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(200, json=reference("not_ready")))
+    status_route(respx_mock, "in_progress", "failed", fail_reason="No face detected")
+
+    result = higgs("soul", "train", "alice", *photos, "--json")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "soul_training_failed"
+    assert "No face detected" in error["message"]
+    registered = souls_toml(config_dir)["souls"]["alice"]
+    assert (registered["status"], registered["fail_reason"]) == ("failed", "No face detected")
+
+
+def test_soul_list_shows_the_registered_soul_ids_without_calling_the_api(
+    higgs, project, photos, api_key, respx_mock, monkeypatch, tmp_path
+):
+    assert train(higgs, respx_mock, "alice").exit_code == 0
+    assert train(higgs, respx_mock, "bob", version="cinema", soul_id=OTHER_ID, args=["--no-wait"]).exit_code == 0
+    respx_mock.reset()
+    monkeypatch.chdir(tmp_path)  # account-scoped: works outside any Project
+
+    result = higgs("soul", "list", "--json")
+
+    assert result.exit_code == 0, result.output
+    listed = [
+        (soul["name"], soul["version"], soul["status"], soul["id"]) for soul in json.loads(result.output)["souls"]
+    ]
+    assert listed == [("alice", "v2", "completed", SOUL_ID), ("bob", "cinema", "not_ready", OTHER_ID)]
+    assert not respx_mock.calls
+
+    text = higgs("soul", "list")
+
+    assert "alice" in text.output and "cinema" in text.output and OTHER_ID in text.output
+
+
+def test_soul_list_without_any_soul_ids_says_how_to_train_one(higgs):
+    result = higgs("soul", "list")
+
+    assert result.exit_code == 0
+    assert "higgs soul train" in result.output
+    assert json.loads(higgs("soul", "list", "--json").output)["souls"] == []
