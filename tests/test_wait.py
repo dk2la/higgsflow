@@ -47,7 +47,7 @@ def test_a_completed_request_downloads_its_generation_with_metadata(higgs, proje
     )
 
     assert result.exit_code == 0, result.output
-    name = "20261030-1200_higgsfield-ai-soul-v2-standard_gen_editorial-portrait-in-soft_v01.jpg"
+    name = "20261030-1200_soul-v2_t2i_editorial-portrait-in-soft_v01.jpg"
     generation = project / DAY / name
     assert generation.read_bytes() == b"jpeg-1"
     metadata = json.loads((project / DAY / f"{name}.json").read_text())
@@ -219,7 +219,7 @@ def test_a_completed_request_as_text_lists_the_downloaded_files(higgs, project, 
 
     assert result.exit_code == 0, result.output
     assert f"Completed Request {REQUEST_ID}" in result.output
-    assert f"{DAY}/20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-cat_v01.jpg" in result.output
+    assert f"{DAY}/20261030-1200_soul-v2_t2i_a-cat_v01.jpg" in result.output
 
 
 def test_a_failed_download_is_an_error_and_leaves_no_partial_file(higgs, project, api_key, respx_mock):
@@ -267,7 +267,7 @@ def test_the_metadata_lists_the_inputs_of_the_request(higgs, project, api_key, r
     result = gen(higgs, "-p", "image_url=inputs/a.jpg")
 
     assert result.exit_code == 0, result.output
-    metadata = json.loads((project / DAY / "20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-cat_v01.jpg.json").read_text())
+    metadata = json.loads((project / DAY / "20261030-1200_soul-v2_t2i_a-cat_v01.jpg.json").read_text())
     assert [(item["param"], item["path"], item["public_url"]) for item in metadata["inputs"]] == [
         ("image_url", "inputs/a.jpg", "https://cdn.example.com/input/example.jpeg")
     ]

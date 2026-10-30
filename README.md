@@ -25,6 +25,8 @@ The wrapper mounts, at identical absolute paths:
 - `~/.config/higgs/` (credentials, config, user catalog), read-write.
 
 Only the projects root is visible inside the container, so files you pass to `higgs` must live in a Project.
+The wrapper also passes the host's time zone (`TZ`, from `$TZ` or the `/etc/localtime` symlink, else UTC),
+so the times in Generation names are local.
 
 ## Usage
 
@@ -44,6 +46,8 @@ higgs status [<request-id>]      # refreshes one Request, or every pending one, 
 higgs sync                       # checks every Request not downloaded yet once; downloads the completed ones
 higgs download <request-id>      # downloads a completed Request's Generations again, while its links are alive
 higgs list --status pending --model kling --mode i2v --since 2026-10-01   # history from local files only
+higgs pick generations/2026-10-30/<file>.png
+                                 # copies the Generation, its .json and Artifacts into final/
 ```
 
 `status` never downloads; `sync` does, without waiting: each Request not downloaded yet gets one status
@@ -59,8 +63,15 @@ Without `--no-wait`, `higgs gen` polls the Request (2 s backing off to 10 s, wai
 retrying transient errors) and downloads every Generation and Artifact into `generations/YYYY-MM-DD/` as
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN[-N].<ext>`, each with a `<file>.json` describing how it was
 made. `<slug>` is `--name` or the first words of the prompt; `vNN` counts the Project's Requests with that
-slug. For a raw `gen` the model slug and Mode come from the Endpoint id (see DESIGN.md §5). A failed, nsfw
+slug. The model slug and Mode come from the catalog, with the quality tier when the Endpoint has one
+(`kling-video/v3.0/pro/image-to-video` → `kling-3-0-pro_i2v`); for an Endpoint the catalog lacks they come
+from the Endpoint id (see DESIGN.md §5). A failed, nsfw
 or canceled Request ends with an error and downloads nothing.
+
+`higgs pick <generation>` takes a path or just the file name (looked up under `generations/`) and copies
+the Generation with its `.json` and all its Artifacts into `final/` under the same names, as real copies
+(no symlinks). Picking the same Generation again refreshes the copies; a file without its `.json` is not a
+Generation and is refused.
 
 The key can also come from `HF_KEY="id:secret"` or `HF_API_KEY` + `HF_API_SECRET`, which take precedence
 over the saved file. Project-scoped commands find the Project by walking up from the current directory to
