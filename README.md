@@ -26,6 +26,28 @@ The wrapper mounts, at identical absolute paths:
 
 Only the projects root is visible inside the container, so files you pass to `higgs` must live in a Project.
 
+## Usage
+
+```sh
+higgs auth login                 # saves KEY_ID:KEY_SECRET to ~/.config/higgs/credentials.toml (mode 600)
+higgs init demo                  # creates ~/hf-projects/demo with the standard layout
+higgs projects                   # lists the Projects under the projects root
+higgs models list --mode i2v     # Models with their Family, Modes, quality tiers and "from" price
+higgs models show kling-3.0      # every Endpoint of a Model: parameters, allowed values, prompt limits
+cd ~/hf-projects/demo
+higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=2 \
+  --no-validate --no-wait        # submits a Request; its record lands in .hf/requests/<request_id>.json
+```
+
+The key can also come from `HF_KEY="id:secret"` or `HF_API_KEY` + `HF_API_SECRET`, which take precedence
+over the saved file. Project-scoped commands find the Project by walking up from the current directory to
+the nearest `project.toml`, like git; `--project <name>` picks another one. `-p` values are parsed as JSON
+when they are valid JSON (`5`, `0.5`, `true`, `null`, `[...]`, `{...}`) and are strings otherwise
+(`16:9`); quote a value to force a string (`-p 'seed="42"'`). Every command takes `--json`.
+
+For now `higgs gen` requires `--no-validate` (validation against the catalog is not built yet) and `--no-wait`
+(waiting for and downloading the result is not built yet).
+
 ## Development
 
 Development, type checking and tests run in the same container:

@@ -10,6 +10,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from hfcore.catalog import Endpoint, ModelSummary, Parameter, Price, PromptConstraints, load_catalog
+from hfcore.config import config_dir
 from hfcli.output import JsonOpt, console, print_json
 
 app = typer.Typer(name="models", help="Browse the model catalog.", no_args_is_help=True)
@@ -36,7 +37,7 @@ def list_models(
     as_json: JsonOpt = False,
 ) -> None:
     """List Models with their Family, Modes and approximate "from" price."""
-    summaries = load_catalog().summaries(family=family, mode=mode)
+    summaries = load_catalog(config_dir()).summaries(family=family, mode=mode)
     if as_json:
         print_json({"models": summaries})
         return
@@ -57,7 +58,7 @@ def show_model(
     as_json: JsonOpt = False,
 ) -> None:
     """Show a Model's Endpoints: parameters, allowed values, defaults and prompt constraints."""
-    catalog = load_catalog()
+    catalog = load_catalog(config_dir())
     summary = catalog.summary(model)
     endpoints = catalog.endpoints_for(summary.slug)
     if as_json:

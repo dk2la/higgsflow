@@ -12,6 +12,7 @@ from typing import Annotated, Any
 import typer
 from pydantic import BaseModel
 from rich.console import Console
+from rich.markup import escape
 
 from hfcore.errors import HiggsError
 
@@ -38,6 +39,13 @@ def json_mode(ctx: typer.Context) -> bool:
     return bool(ctx.meta.get(_JSON_KEY))
 
 
+def ask(ctx: typer.Context, question: str, *, flag: str, hide_input: bool = False) -> str:
+    """Prompt for a missing value; in JSON mode (which implies no input) fail instead."""
+    if json_mode(ctx):
+        raise HiggsError(f"Missing {flag}", hint=f"Pass {flag}; --json never prompts.", code="missing_param")
+    return str(typer.prompt(question, hide_input=hide_input, err=True))
+
+
 def _jsonable(data: Any) -> Any:
     if isinstance(data, BaseModel):
         return data.model_dump(mode="json")
@@ -56,6 +64,12 @@ def render_error(error: HiggsError, *, as_json: bool) -> None:
     if as_json:
         print_json({"error": error.to_dict()})
         return
-    err_console.print(f"[bold red]Error:[/] {error.message}", highlight=False)
+    # Messages may quote API responses, so escape them rather than read them as Rich markup.
+    err_console.print(f"[bold red]Error:[/] {escape(error.message)}", highlight=False)
     if error.hint:
-        err_console.print(f"[dim]Hint:[/] {error.hint}", highlight=False)
+        err_console.print(f"[dim]Hint:[/] {escape(error.hint)}", highlight=False)
+    # Context fields such as the HTTP status and X-Correlation-ID (for support).
+    for key, value in error.to_dict().items():
+        if key not in ("code", "message", "hint") and value is not None:
+            label = key.replace("_", " ").capitalize()
+            err_console.print(f"[dim]{label}:[/] {escape(str(value))}", highlight=False)

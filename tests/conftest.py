@@ -45,3 +45,19 @@ def higgs():
         return runner.invoke(app, list(args), input=input, catch_exceptions=False)
 
     return invoke
+
+
+@pytest.fixture
+def project(higgs, projects_root: Path, monkeypatch) -> Path:
+    """A Project named `demo`, with the current directory inside it."""
+    higgs("init", "demo")
+    path = projects_root / "demo"
+    monkeypatch.chdir(path)
+    return path
+
+
+@pytest.fixture
+def api_key(higgs) -> str:
+    """A key saved with `higgs auth login`; returns the expected `Authorization` header."""
+    higgs("auth", "login", "--key", "key-id:key-secret")
+    return "Key key-id:key-secret"

@@ -189,7 +189,7 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
 | `higgs status [<request-id>]` / `higgs list [filters]` | Request status / project history |
 | `higgs sync` | download completed Requests |
 | `higgs download <request-id>` | re-download a Request's Generations (while the links are alive) |
-| `higgs cancel <request-id>` / `higgs delete <request-id>` | cancel (queued only) / delete on the API side only (local files stay) |
+| `higgs cancel <request-id>` / `higgs delete <request-id>` | cancel (queued only; the record becomes `canceled`) / delete on the API side only (local files stay; the record gets `deleted_at`). Only Requests of the Project: an id without a local record fails with `request_not_found` before any API call |
 | `higgs pick <generation>` | copy to `final/` |
 | `higgs ref save <generation> <name> [--force]` | save a generation as a reference |
 | `higgs soul train <name> <images...> [--version v1\|v2\|cinema]` | train a Soul ID from project images |

@@ -9,7 +9,7 @@ from typer.core import TyperGroup
 
 from hfcore import __version__
 from hfcore.errors import HiggsError
-from hfcli import models
+from hfcli import auth, gen, models, projects, request_actions
 from hfcli.output import JsonOpt, json_mode, print_json, render_error
 
 
@@ -52,6 +52,12 @@ def root(
         raise typer.Exit()
 
 
+app.command()(projects.init)
+app.command("projects")(projects.list_projects)
+app.add_typer(auth.app, name="auth")
+app.command()(gen.gen)
+app.command()(request_actions.cancel)
+app.command()(request_actions.delete)
 app.add_typer(models.app)
 
 
