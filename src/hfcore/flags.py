@@ -17,8 +17,9 @@ otherwise it maps like any other flag. A repeatable flag (`--ref a.jpg --ref b.p
 as it is, a single-value parameter only a one-item list.
 
 A flag whose value is a name to look up (`--soul <name>` → the Soul ID's
-`custom_reference_id`, `--preset <name>`) is still a `Flag` here, with the parameters it
-may land in; the command layer swaps the name for the looked-up value before `map_flags`.
+`custom_reference_id`, `--preset <name>` → a Preset's `style_id`/`preset_id` via
+`hfcore.presets.find_preset`) is still a `Flag` here, with the parameters it may land in;
+the command layer swaps the name for the looked-up value before `map_flags`.
 """
 
 from __future__ import annotations
@@ -70,6 +71,9 @@ FLAGS: dict[str, Flag] = {
         # `higgs image`'s repeatable `--image`: the input/reference images (a list). Kept apart from
         # video's `image` (the start frame); a single-image parameter takes a one-item list.
         Flag("images", "--image", ("image_urls", "image_url", "image_reference_url")),
+        # A Preset's id, once `hfcore.presets.find_preset` has looked the name up: SOUL's
+        # `style_id`, Genjutsu Restyle's and Marketing Studio's `preset_id`.
+        Flag("preset", "--preset", ("style_id", "preset_id")),
     )
 }
 

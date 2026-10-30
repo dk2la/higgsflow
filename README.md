@@ -98,7 +98,7 @@ parameters, so the same flag means the same thing for every Model. Each Mode is 
 | `edit` | edit a video as the prompt says (Kling O3/Omni, Seedance 2.5, Genjutsu object swap) | `--video`, `--ref`, `--audio` |
 | `extend` | continue a video (Seedance 2.5) | `--video`, `--ref`, `--audio` |
 | `motion` | the character of an image moves like the one in a video (Kling Motion Control, Genjutsu motion transfer) | `--video`, `--image` |
-| `restyle` | restyle a video with a Preset (Genjutsu restyle) | `--video`, `--ref`, `-p preset_id=<uuid>` |
+| `restyle` | restyle a video with a Preset (Genjutsu restyle) | `--video`, `--ref`, `--preset` |
 
 | Flag | Parameter (first one the Endpoint has) |
 |---|---|
@@ -120,8 +120,8 @@ flags (Kling Motion Control's `-p character_orientation=image`, Seedance's `-p g
 reference videos as `-p 'video_urls=["inputs/a.mp4","inputs/b.mp4"]'`). `--image`, `--end-image`, `--ref`,
 `--video` and `--audio` take a file in the Project or a Reference (`@hero`), uploaded like any Input. Prompt
 tokens are checked against what was given: Cinema Studio 4.0 with two `--ref` and `<<<image_3>>>` in the prompt
-fails `validation_failed` before anything is uploaded. Genjutsu restyle needs a Preset id as
-`-p preset_id=<uuid>` (`--preset <name>` is still to come); without one it fails validation.
+fails `validation_failed` before anything is uploaded. Genjutsu restyle needs a Preset: `--preset <name or id>`
+(see [Presets](#presets-higgs-presets-list-and---preset)), or `-p preset_id=<uuid>`; without one it is asked for.
 `--prompt-file prompts/x.md` reads the prompt from a file inside the Project (relative to the current
 directory). The body is then validated, priced, confirmed and submitted exactly like `higgs gen`'s, and
 `--name`, `--no-wait`, `--yes`, `--no-input`, `--json` and `--project` work the same way.
@@ -185,6 +185,41 @@ aspect = "3:4"
 A Model's own `batch_size` (SOUL: 1 or 4) is an ordinary `-p` parameter: one Request whose Generations are
 numbered `..._v01-1.png`, `..._v01-2.png`, ... . It combines with `--count`: `--count 2 -p batch_size=4`
 submits two Requests (`v01`, `v02`, one price confirmation), each with four Generations (`v01-1` … `v02-4`).
+
+### Presets: `higgs presets list` and `--preset`
+
+A Preset is a ready-made style from one of three Higgsfield catalogs. The docs list none of them, only the
+API endpoints that do, so `higgs presets list` fetches the catalog live with your key (nothing is cached):
+
+```sh
+higgs presets list soul-styles   # SOUL and SOUL V2 styles (style_id)
+higgs presets list restyle       # Genjutsu Restyle presets (preset_id)
+higgs presets list marketing     # Marketing Studio Image presets (preset_id), with their group and aspect ratio
+```
+
+Each row has the name, the id and the Models (`--model`) that take it; `--json` prints
+`{"catalog", "presets": [{"id", "name", "description", "group", "aspect_ratio", "preview_url", "models"}]}`.
+
+`--preset <name or id>` on `higgs image t2i|i2i` and `higgs video restyle` looks the name up (case-insensitively;
+an id works too) in the catalog of the chosen Model, fetched live, and sends its id in the Model's parameter:
+
+| Model | Catalog | Parameter |
+|---|---|---|
+| `soul`, `soul-v2` | `soul-styles` (each Model its own list) | `style_id` |
+| `genjutsu` (`higgs video restyle`) | `restyle` | `preset_id` |
+| `marketing-studio-image-2.0-alpha`, `-2.5-flare`, `-2.5-sunburst` | `marketing` | `preset_id`, plus `enhance_prompt=true` |
+
+```sh
+higgs image t2i -m soul-v2 --preset "Editorial" --prompt "Portrait in the rain"
+higgs video restyle -m genjutsu --video inputs/clip.mp4 --preset "cel-shaded cg anime"
+higgs image t2i -m marketing-studio-image-2.5-flare --image inputs/product.png --preset "Editorial product portrait" --prompt "On a marble table"
+```
+
+A Marketing Studio preset only takes effect with prompt enhancement, so `--preset` also sends
+`enhance_prompt=true`, which needs one or two `--image` (the product first); `-p enhance_prompt=false` overrides
+it. `--preset` on a Model without Presets fails before anything is sent (`unsupported_flag`, listing the
+Models that have them); an unknown name fails with `unknown_preset` and the closest names
+(`Did you mean: Editorial?`); a name several Presets share fails with `ambiguous_preset` and their ids.
 
 `higgs pick <generation>` takes a path or just the file name (looked up under `generations/`) and copies
 the Generation with its `.json` and all its Artifacts into `final/` under the same names, as real copies

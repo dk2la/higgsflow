@@ -19,6 +19,7 @@ from hfcli.convenience import (
     NameOpt,
     NoWaitOpt,
     ParamOpt,
+    PresetOpt,
     PromptFileOpt,
     PromptOpt,
     QualityOpt,
@@ -340,6 +341,7 @@ def restyle(
     video: VideoOpt = None,
     ref: RefOpt = None,
     quality: QualityOpt = None,
+    preset: PresetOpt = None,
     prompt: PromptOpt = None,
     prompt_file: PromptFileOpt = None,
     name: NameOpt = None,
@@ -351,13 +353,13 @@ def restyle(
     no_input: NoInputOpt = False,
     as_json: JsonOpt = False,
 ) -> None:
-    """Restyle --video with a Preset (-p preset_id=...)."""
+    """Restyle --video with a Preset (--preset, see `higgs presets list restyle`)."""
     generate(
         ctx,
         kind="video",
         mode="restyle",
         model=model,
-        flags={"prompt": prompt, "video": video, "ref": ref or None, "quality": quality},
+        flags={"prompt": prompt, "video": video, "ref": ref or None, "quality": quality, "preset": preset},
         prompt_file=prompt_file,
         params=param,
         name=name,

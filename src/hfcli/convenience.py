@@ -16,9 +16,11 @@ flag left out of the dict is never asked for) and calls `generate` with its kind
 
 A new flag is an entry in `hfcore.flags.FLAGS`, an `...Opt` alias here and an option on
 the commands that offer it. A flag that names something to look up (`--soul <name>`:
-`souls.toml` → `custom_reference_id`, checked against the SOUL Model; `--preset <name>`)
-is resolved between steps 2 and 3, once the Endpoint is known, by replacing the name in
-`flags` with the looked-up value; from there on it maps like any other flag.
+`souls.toml` → `custom_reference_id`, checked against the SOUL Model) is resolved between
+steps 2 and 3, once the Endpoint is known, by replacing the name in `flags` with the
+looked-up value; from there on it maps like any other flag. `--preset <name>` is resolved
+the same way between steps 3 and 4 (`_apply_preset`: the Preset lists of the Endpoint,
+fetched live, see `hfcore.presets`), so a Preset name typed at the prompt is looked up too.
 """
 
 from __future__ import annotations
@@ -29,9 +31,11 @@ from typing import Annotated, Any
 import typer
 
 from hfcore import flags as common_flags
-from hfcore import prompts
+from hfcore import presets, prompts
+from hfcore.api import ApiClient
 from hfcore.catalog import Catalog, Endpoint, load_catalog
 from hfcore.config import config_dir
+from hfcore.credentials import load_credentials
 from hfcore.errors import HiggsError
 from hfcore.projects import load_config
 from hfcli.output import ask, print_json
@@ -96,6 +100,13 @@ CountOpt = Annotated[
         help="Submit N separate Requests (a different seed each, where the Model has seeds); the price is confirmed once.",
     ),
 ]
+PresetOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--preset",
+        help="A Preset by name or id, where the Model takes Presets (see `higgs presets list <catalog>`).",
+    ),
+]
 NoWaitOpt = Annotated[bool, typer.Option("--no-wait", help="Return the request ids right after submitting.")]
 
 
@@ -132,7 +143,8 @@ def generate(
         options = common_flags.choices(endpoint, key)
         question = flag.option.removeprefix("--").replace("-", " ").capitalize()
         flags[key] = ask(ctx, question, flag=flag.option, choices=options)
-    body = {**common_flags.map_flags(endpoint, flags), **extra}
+    flags, preset_params = _apply_preset(endpoint, flags)
+    body = {**common_flags.map_flags(endpoint, flags), **preset_params, **extra}
     bodies = common_flags.vary_seeds(endpoint, body, count)
     batch = run_requests(ctx, target, endpoint.id, bodies, name=name, yes=yes, no_wait=no_wait, quiet=as_json)
     if as_json:
@@ -142,6 +154,19 @@ def generate(
     for result in batch.results:
         echo_result(result, target)
     batch.raise_unfinished()
+
+
+def _apply_preset(endpoint: Endpoint, flags: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """`flags` with the `--preset` name (or id) replaced by the Preset's id, fetched live (ADR 0004),
+    and the parameters the Preset brings along (`hfcore.presets.preset_params`)."""
+    wanted = flags.get("preset")
+    if wanted is None:
+        return flags, {}
+    catalog = load_catalog(config_dir())
+    presets.endpoint_sources(endpoint, catalog)  # a Model without Presets fails before the key is needed
+    with ApiClient(load_credentials()) as client:
+        preset = presets.find_preset(client, endpoint, wanted, catalog)
+    return {**flags, "preset": preset.id}, presets.preset_params(endpoint)
 
 
 def _endpoint(

@@ -9,8 +9,9 @@ images (`--image`, repeatable where the Model takes several); `i2i` is Qwen Imag
 Ads Studio (Mode `ads`) is reachable only via `higgs gen`. A Model's own `batch_size` is a
 `-p` parameter: one Request, several Generations (`..._v01-1.png`, `-2`, ...).
 
-`--soul` and `--preset` (both Modes) are added here as options passed in the `flags` dict
-like the others; see `hfcli.convenience` for where their names are looked up.
+`--preset` (both Modes; SOUL styles and Marketing Studio presets, `hfcore.presets`) is an
+option passed in the `flags` dict like the others, and so is `--soul` (#21); see
+`hfcli.convenience` for where their names are looked up.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from hfcli.convenience import (
     NameOpt,
     NoWaitOpt,
     ParamOpt,
+    PresetOpt,
     PromptFileOpt,
     PromptOpt,
     QualityOpt,
@@ -47,6 +49,7 @@ def t2i(
     prompt: PromptOpt = None,
     prompt_file: PromptFileOpt = None,
     seed: SeedOpt = None,
+    preset: PresetOpt = None,
     name: NameOpt = None,
     count: CountOpt = 1,
     param: ParamOpt = None,
@@ -62,7 +65,14 @@ def t2i(
         kind="image",
         mode="t2i",
         model=model,
-        flags={"prompt": prompt, "images": image, "quality": quality, "aspect": aspect, "seed": seed},
+        flags={
+            "prompt": prompt,
+            "images": image,
+            "quality": quality,
+            "aspect": aspect,
+            "seed": seed,
+            "preset": preset,
+        },
         prompt_file=prompt_file,
         params=param,
         name=name,
@@ -84,6 +94,7 @@ def i2i(
     prompt: PromptOpt = None,
     prompt_file: PromptFileOpt = None,
     seed: SeedOpt = None,
+    preset: PresetOpt = None,
     name: NameOpt = None,
     count: CountOpt = 1,
     param: ParamOpt = None,
@@ -99,7 +110,14 @@ def i2i(
         kind="image",
         mode="i2i",
         model=model,
-        flags={"prompt": prompt, "images": image, "quality": quality, "aspect": aspect, "seed": seed},
+        flags={
+            "prompt": prompt,
+            "images": image,
+            "quality": quality,
+            "aspect": aspect,
+            "seed": seed,
+            "preset": preset,
+        },
         prompt_file=prompt_file,
         params=param,
         name=name,
