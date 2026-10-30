@@ -8,6 +8,8 @@ import json
 from typing import Any
 
 import httpx
+import pytest
+import respx
 
 API = "https://api.higgsfield.ai"
 
@@ -55,3 +57,67 @@ def test_t2i_maps_the_common_flags_onto_the_endpoint_of_the_model(higgs, project
     assert [item["request_id"] for item in output] == ["req-1"]
     assert output[0]["record"]["endpoint"] == "higgsfield-ai/soul/v2/standard"
     assert (project / ".hf" / "requests" / "req-1.json").is_file()
+
+
+UPLOAD_URL_ENDPOINT = f"{API}/files/generate-upload-url"
+STORAGE_URL = "https://storage.example.com/presigned-upload-url"
+# Minimal files that start with the JPEG / PNG magic bytes.
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 32
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+
+def mock_uploads(respx_mock: respx.MockRouter) -> None:
+    """Every upload succeeds; the n-th gets the public URL https://cdn.example.com/upload-n."""
+    counter = itertools.count(1)
+    respx_mock.put(STORAGE_URL).mock(return_value=httpx.Response(200))
+
+    def upload_url(request: httpx.Request) -> httpx.Response:
+        content_type = json.loads(request.content)["content_type"]
+        return httpx.Response(
+            200,
+            json={
+                "public_url": f"https://cdn.example.com/upload-{next(counter)}",
+                "upload_url": STORAGE_URL,
+                "content_type": content_type,
+                "upload_headers": {"Content-Type": content_type},
+            },
+        )
+
+    respx_mock.post(UPLOAD_URL_ENDPOINT).mock(side_effect=upload_url)
+
+
+@pytest.fixture
+def images(project):
+    (project / "inputs" / "a.jpg").write_bytes(JPEG)
+    (project / "inputs" / "b.png").write_bytes(PNG)
+
+
+UPLOAD_1 = "https://cdn.example.com/upload-1"
+UPLOAD_2 = "https://cdn.example.com/upload-2"
+
+# (model, mode, endpoint, --image values, expected body): each Model names its input images its own way.
+IMAGE_MAPPINGS = [
+    (
+        "grok-image-2.0", "t2i", "xai/grok-imagine-image-2.0", ["inputs/a.jpg", "inputs/b.png"],
+        {"image_urls": [UPLOAD_1, UPLOAD_2]},
+    ),
+    ("marketing-studio-image-2.5-flare", "t2i", "marketing-studio/image/flare", ["inputs/a.jpg"], {"image_urls": [UPLOAD_1]}),
+    ("ideogram-4.0", "t2i", "ideogram/v4.0", ["inputs/a.jpg"], {"image_url": UPLOAD_1}),
+    ("soul", "t2i", "higgsfield-ai/soul/standard", ["inputs/a.jpg"], {"image_reference_url": UPLOAD_1}),
+]
+
+
+@pytest.mark.parametrize(("model", "mode", "endpoint", "values", "expected"), IMAGE_MAPPINGS)
+def test_image_maps_the_input_images_per_model(
+    higgs, project, api_key, respx_mock, estimate, images, model, mode, endpoint, values, expected
+):
+    mock_uploads(respx_mock)
+    route = mock_submit(respx_mock, endpoint)
+    args = [arg for value in values for arg in ("--image", value)]
+
+    result = image(higgs, mode, "--model", model, "--prompt", "In this style", *args, "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "In this style", **expected}
+    record = json.loads(result.output)[0]["record"]
+    assert [item["source"] for item in record["inputs"]] == values

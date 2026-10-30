@@ -43,6 +43,9 @@ FLAGS: dict[str, Flag] = {
         # Kling O3/Omni `mode` (std|pro|4k), else `resolution` (720p, 1080p, ...); image Models also have `quality`.
         Flag("quality", "--quality", ("mode", "resolution", "quality")),
         Flag("seed", "--seed", ("seed",)),
+        # `higgs image`'s repeatable `--image`: the input/reference images (a list). Kept apart from
+        # video's `image` (the start frame); a single-image parameter takes a one-item list.
+        Flag("images", "--image", ("image_urls", "image_url", "image_reference_url")),
     )
 }
 
@@ -166,7 +169,10 @@ def convert(parameter: Parameter, value: Any) -> Any:
     """`value` as the parameter's type: `"5"` → 5 for an integer, an allowed value matched case-insensitively.
 
     A value that does not convert is returned as it is, for validation to report.
+    A one-item list (a repeatable flag given once) is that item for a parameter that is not an array.
     """
+    if isinstance(value, list) and parameter.type != "array" and len(value) == 1:
+        value = value[0]
     if parameter.enum is not None and (match := _enum_match(parameter, value)) is not None:
         return match
     if isinstance(value, str):

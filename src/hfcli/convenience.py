@@ -49,6 +49,14 @@ ImageOpt = Annotated[
 EndImageOpt = Annotated[
     str | None, typer.Option("--end-image", help="End image: a file in the Project or a Reference (@name).")
 ]
+ImagesOpt = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--image",
+        "-i",
+        help="Input/reference image, repeatable where the Model takes several: a file in the Project or a Reference (@name).",
+    ),
+]
 PromptOpt = Annotated[str | None, typer.Option("--prompt", help="The prompt.")]
 PromptFileOpt = Annotated[
     str | None,

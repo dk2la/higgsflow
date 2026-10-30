@@ -12,6 +12,7 @@ import typer
 from hfcli.convenience import (
     AspectOpt,
     CountOpt,
+    ImagesOpt,
     ModelOpt,
     NameOpt,
     NoWaitOpt,
@@ -32,6 +33,7 @@ app = typer.Typer(name="image", help="Generate images with the common flags.", n
 def t2i(
     ctx: typer.Context,
     model: ModelOpt = None,
+    image: ImagesOpt = None,
     quality: QualityOpt = None,
     aspect: AspectOpt = None,
     prompt: PromptOpt = None,
@@ -52,7 +54,7 @@ def t2i(
         kind="image",
         mode="t2i",
         model=model,
-        flags={"prompt": prompt, "quality": quality, "aspect": aspect, "seed": seed},
+        flags={"prompt": prompt, "images": image, "quality": quality, "aspect": aspect, "seed": seed},
         prompt_file=prompt_file,
         params=param,
         name=name,
