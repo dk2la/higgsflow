@@ -127,18 +127,14 @@ def test_a_param_without_a_value_is_rejected(higgs, project, api_key, respx_mock
     assert not respx_mock.calls
 
 
-@pytest.mark.parametrize(
-    ("flags", "missing"),
-    [(["--no-wait"], "--no-validate"), (["--no-validate"], "--no-wait")],
-)
-def test_gen_requires_the_flags_whose_features_do_not_exist_yet(higgs, project, api_key, respx_mock, flags, missing):
-    # Catalog validation (#14) and waiting for the result (#8) are not built yet.
-    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", *flags, "--json")
+def test_gen_requires_no_wait_until_waiting_exists(higgs, project, api_key, respx_mock):
+    # Waiting for the result (#8) is not built yet; validation (#14) no longer needs a flag.
+    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--json")
 
     assert result.exit_code == 1
     error = json.loads(result.output)["error"]
     assert error["code"] == "not_implemented"
-    assert missing in error["hint"]
+    assert "--no-wait" in error["hint"]
     assert not respx_mock.calls
     assert not list((project / ".hf" / "requests").iterdir())
 

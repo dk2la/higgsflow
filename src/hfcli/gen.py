@@ -7,8 +7,10 @@ from typing import Annotated
 
 import typer
 
-from hfcore import credentials, inputs, lifecycle, requests
+from hfcore import credentials, inputs, lifecycle, requests, validation
 from hfcore.api import ApiClient
+from hfcore.catalog import load_catalog
+from hfcore.config import config_dir
 from hfcore.errors import HiggsError
 from hfcli.output import JsonOpt, print_json
 from hfcli.params import parse_params
@@ -34,14 +36,8 @@ def gen(
     as_json: JsonOpt = False,
 ) -> None:
     """Submit a Request to any Endpoint."""
-    # Until the catalog (#14) and polling (#8) exist, both must be skipped explicitly,
-    # so adding them later never silently changes what an existing command does.
-    if not no_validate:
-        raise HiggsError(
-            "Validation against the catalog is not implemented yet",
-            hint="Pass --no-validate to submit the parameters as they are.",
-            code="not_implemented",
-        )
+    # Until polling (#8) exists, waiting must be skipped explicitly, so adding it later
+    # never silently changes what an existing command does.
     if not no_wait:
         raise HiggsError(
             "Waiting for the result is not implemented yet",
@@ -50,6 +46,8 @@ def gen(
         )
     params = parse_params(param or [])
     target = current_project(project)
+    if not no_validate:
+        validation.validate_request(load_catalog(config_dir()), endpoint, params, cwd=Path.cwd())
     with ApiClient(credentials.load_credentials()) as client:
         resolved = inputs.resolve_inputs(client, target, params, cwd=Path.cwd())
         record = lifecycle.submit_request(client, target, endpoint, resolved.params, inputs=resolved.inputs)
