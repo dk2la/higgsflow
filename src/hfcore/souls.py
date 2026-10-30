@@ -35,9 +35,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from hfcore import clock, config, inputs
-from hfcore.api import ApiClient, CustomReference
+from hfcore.api import ApiClient, ApiError, CustomReference
 from hfcore.errors import HiggsError
-from hfcore.lifecycle import POLL_ERROR_ATTEMPTS, Backoff, retry_wait
+from hfcore.lifecycle import POLL_ERROR_ATTEMPTS, SUBMIT_ATTEMPTS, Backoff, retry_wait
 from hfcore.projects import Project
 
 SOULS_FILE = "souls.toml"
@@ -106,7 +106,7 @@ def train_soul(
         "model_version": version,
         "input_images": [{"type": "image_url", "image_url": url} for url in urls],
     }
-    created = client.create_custom_reference(body)
+    created = _create_with_retries(client, body)
     now = clock.now()
     soul = Soul(
         name=name,
@@ -122,6 +122,23 @@ def train_soul(
     )
     save_soul(soul)
     return soul
+
+
+def _create_with_retries(client: ApiClient, body: dict[str, Any]) -> CustomReference:
+    """Start the training, waiting out a 429 (too many trainings at once; nothing is created or charged).
+
+    Nothing else is retried: the create has no Idempotency-Key, so retrying a network
+    failure or a 5xx that may have reached the API could train (and bill) the Soul ID twice.
+    """
+    backoff = Backoff()
+    for attempt in range(1, SUBMIT_ATTEMPTS + 1):
+        try:
+            return client.create_custom_reference(body)
+        except ApiError as error:
+            if error.status != 429 or attempt == SUBMIT_ATTEMPTS:
+                raise
+            clock.sleep(error.retry_after if error.retry_after is not None else backoff.next())
+    raise AssertionError("unreachable")
 
 
 def wait_for_soul(client: ApiClient, soul: Soul, *, on_progress: SoulProgress | None = None) -> Soul:

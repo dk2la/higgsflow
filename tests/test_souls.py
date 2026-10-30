@@ -177,3 +177,58 @@ def test_fewer_than_1_or_more_than_100_images_fail_before_any_upload(higgs, proj
     assert not respx_mock.calls
     assert not (config_dir / "souls.toml").exists()
     assert not (project / ".hf" / "uploads.json").exists()
+
+
+def test_training_is_not_a_request_and_not_in_the_spend(higgs, project, photos, api_key, respx_mock):
+    mock_uploads(respx_mock)
+    respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(200, json=reference("not_ready")))
+    status_route(respx_mock, "completed")
+    respx_mock.get(f"{API}/models/usage").mock(
+        return_value=httpx.Response(200, json={"time_series": [], "total": 0, "page": 1, "limit": 100})
+    )
+
+    result = higgs("soul", "train", "alice", *photos, "--json")
+
+    assert result.exit_code == 0, result.output
+    assert list((project / ".hf" / "requests").iterdir()) == []
+    assert json.loads(higgs("list", "--json").output)["requests"] == []
+    local = json.loads(higgs("usage", "--json").output)["project"]
+    assert (local["spend_usd"], local["requests"]) == ("0", 0)
+
+
+def too_many_trainings(retry_after: str) -> httpx.Response:
+    # Docs "Rate limits" → Endpoint-specific limits.
+    return httpx.Response(
+        429,
+        headers={"Retry-After": retry_after},
+        json={"detail": "Maximum number of concurrent requests (2) has been reached"},
+    )
+
+
+def test_too_many_trainings_at_once_waits_for_retry_after_and_starts_again(
+    higgs, project, photos, api_key, respx_mock, config_dir, clock
+):
+    mock_uploads(respx_mock)
+    create = respx_mock.post(CREATE_URL).mock(
+        side_effect=[too_many_trainings("30"), too_many_trainings("45"), httpx.Response(200, json=reference("queued"))]
+    )
+
+    result = higgs("soul", "train", "alice", *photos, "--no-wait", "--json")
+
+    assert result.exit_code == 0, result.output
+    assert create.call_count == 3
+    assert clock.waits == [30.0, 45.0]
+    assert souls_toml(config_dir)["souls"]["alice"]["status"] == "queued"
+
+
+def test_a_failed_create_is_not_retried_and_registers_nothing(higgs, project, photos, api_key, respx_mock, config_dir):
+    mock_uploads(respx_mock)
+    create = respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(500, json={"detail": "boom"}))
+
+    result = higgs("soul", "train", "alice", *photos, "--json")
+
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["status"] == 500
+    # Creating a Soul ID has no Idempotency-Key: retrying an ambiguous failure could train it twice.
+    assert create.call_count == 1
+    assert not (config_dir / "souls.toml").exists()
