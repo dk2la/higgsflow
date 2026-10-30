@@ -7,16 +7,17 @@ first of them the Endpoint has, whose allowed values (if it lists any) accept th
 and converts the value to the parameter's type. A flag none of whose parameters the
 Endpoint has is an `unsupported_flag` error.
 
-To support a new flag (`--video`, `--audio`, `--ref`, ...), add a `Flag` here and an
-option to the command; to support a new parameter spelling, add it to that flag's
-`params`. `--quality` is special: for a Model with quality tiers in the Mode
-(`Catalog.tiers`) it picks the tier and is not mapped; otherwise it maps like any other flag.
+To support a new flag, add a `Flag` here and an option to the command; to support a new
+parameter spelling, add it to that flag's `params` (or to `mode_params` when the spelling
+means the flag in one Mode only: `--image` is Genjutsu motion transfer's `image_urls`, but
+in `ref` `image_urls` are the `--ref` images). A list value (`--ref` repeated) stays a list.
+`--quality` is special: for a Model with quality tiers in the Mode (`Catalog.tiers`) it picks the tier and is not mapped; otherwise it maps like any other flag.
 """
 
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from hfcore.catalog import Endpoint, Parameter
@@ -30,26 +31,49 @@ class Flag:
     key: str
     option: str
     params: tuple[str, ...]
+    # Parameters that carry the flag in one Mode only, tried after `params`.
+    mode_params: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+    def params_in(self, mode: str) -> tuple[str, ...]:
+        """The parameters that may carry the flag on an Endpoint of `mode`, most specific first."""
+        return self.params + self.mode_params.get(mode, ())
 
 
 FLAGS: dict[str, Flag] = {
     flag.key: flag
     for flag in (
         Flag("prompt", "--prompt", ("prompt",)),
-        Flag("image", "--image", ("image_url", "first_frame_url", "start_image_url")),
+        # In motion, the character to animate: Genjutsu motion transfer takes it as a list.
+        Flag("image", "--image", ("image_url", "first_frame_url", "start_image_url"), {"motion": ("image_urls",)}),
         Flag("end_image", "--end-image", ("end_image_url", "last_image_url", "last_frame_url", "tail_image_url")),
         Flag("duration", "--duration", ("duration",)),
         Flag("aspect", "--aspect", ("aspect_ratio",)),
         # Kling O3/Omni `mode` (std|pro|4k), else `resolution` (720p, 1080p, ...); image Models also have `quality`.
         Flag("quality", "--quality", ("mode", "resolution", "quality")),
         Flag("seed", "--seed", ("seed",)),
+        # The video to edit, extend, restyle or take the motion from; a list of one where the
+        # Endpoint takes several (Kling O3/Omni `video_urls`).
+        Flag("video", "--video", ("video_url", "video_urls")),
+        # Reference images (repeatable `--ref`), referred to in the prompt as <<<image_1>>>, ...
+        Flag("ref", "--ref", ("image_urls",)),
+        # Audio to lip-sync or score to; a list of one where the Endpoint takes several.
+        Flag("audio", "--audio", ("audio_url", "audio_urls")),
     )
 }
 
 
 # Flags a Mode cannot do without, whatever the Endpoint's schema says (Kling 3.0 t2v has an
-# optional prompt, but a text-to-video Request without one makes no sense).
-MODE_REQUIRED: dict[str, tuple[str, ...]] = {"t2v": ("prompt",), "i2v": ("image",)}
+# optional prompt, but a text-to-video Request without one makes no sense). `ref` has none:
+# its references may be images, videos or audio, and the schema says which it needs.
+MODE_REQUIRED: dict[str, tuple[str, ...]] = {
+    "t2v": ("prompt",),
+    "i2v": ("image",),
+    "vref": ("video",),
+    "edit": ("video",),
+    "extend": ("video",),
+    "motion": ("video", "image"),
+    "restyle": ("video",),
+}
 
 # The keys of `project.toml` `[defaults]` (and `[defaults.video]`, `[defaults.image]`) that
 # fill flags that were not given; `model` is the `--model` default.
@@ -149,7 +173,8 @@ def accepts(endpoint: Endpoint, key: str, value: Any) -> bool:
 
 def _present(endpoint: Endpoint, key: str) -> list[Parameter]:
     """The Endpoint's parameters that may carry flag `key`, in the flag's order."""
-    return [parameter for name in FLAGS[key].params for parameter in endpoint.parameters if parameter.name == name]
+    names = FLAGS[key].params_in(endpoint.mode)
+    return [parameter for name in names for parameter in endpoint.parameters if parameter.name == name]
 
 
 def flag_parameter(endpoint: Endpoint, key: str, value: Any = None) -> Parameter | None:

@@ -49,6 +49,18 @@ ImageOpt = Annotated[
 EndImageOpt = Annotated[
     str | None, typer.Option("--end-image", help="End image: a file in the Project or a Reference (@name).")
 ]
+VideoOpt = Annotated[
+    str | None, typer.Option("--video", help="Input video: a file in the Project or a Reference (@name).")
+]
+AudioOpt = Annotated[
+    str | None, typer.Option("--audio", help="Input audio: a file in the Project or a Reference (@name).")
+]
+RefOpt = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--ref", help="Reference image (repeatable): a file in the Project or a Reference (@name)."
+    ),
+]
 PromptOpt = Annotated[str | None, typer.Option("--prompt", help="The prompt.")]
 PromptFileOpt = Annotated[
     str | None,

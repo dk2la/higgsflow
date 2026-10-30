@@ -10,6 +10,7 @@ import typer
 
 from hfcli.convenience import (
     AspectOpt,
+    AudioOpt,
     CountOpt,
     DurationOpt,
     EndImageOpt,
@@ -21,7 +22,9 @@ from hfcli.convenience import (
     PromptFileOpt,
     PromptOpt,
     QualityOpt,
+    RefOpt,
     SeedOpt,
+    VideoOpt,
     generate,
 )
 from hfcli.output import JsonOpt, NoInputOpt, YesOpt
@@ -103,6 +106,258 @@ def i2v(
             "aspect": aspect,
             "seed": seed,
         },
+        prompt_file=prompt_file,
+        params=param,
+        name=name,
+        count=count,
+        project=project,
+        yes=yes,
+        no_wait=no_wait,
+        as_json=as_json,
+    )
+
+
+@app.command("ref")
+def reference(
+    ctx: typer.Context,
+    model: ModelOpt = None,
+    ref: RefOpt = None,
+    video: VideoOpt = None,
+    audio: AudioOpt = None,
+    image: ImageOpt = None,
+    end_image: EndImageOpt = None,
+    quality: QualityOpt = None,
+    duration: DurationOpt = None,
+    aspect: AspectOpt = None,
+    prompt: PromptOpt = None,
+    prompt_file: PromptFileOpt = None,
+    seed: SeedOpt = None,
+    name: NameOpt = None,
+    count: CountOpt = 1,
+    param: ParamOpt = None,
+    no_wait: NoWaitOpt = False,
+    project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Reference to video: a new video with the people and things of --ref (and --video, --audio)."""
+    generate(
+        ctx,
+        kind="video",
+        mode="ref",
+        model=model,
+        flags={
+            "prompt": prompt,
+            "image": image,
+            "end_image": end_image,
+            "ref": ref or None,
+            "video": video,
+            "audio": audio,
+            "quality": quality,
+            "duration": duration,
+            "aspect": aspect,
+            "seed": seed,
+        },
+        prompt_file=prompt_file,
+        params=param,
+        name=name,
+        count=count,
+        project=project,
+        yes=yes,
+        no_wait=no_wait,
+        as_json=as_json,
+    )
+
+
+@app.command("edit")
+def edit(
+    ctx: typer.Context,
+    model: ModelOpt = None,
+    video: VideoOpt = None,
+    ref: RefOpt = None,
+    audio: AudioOpt = None,
+    quality: QualityOpt = None,
+    prompt: PromptOpt = None,
+    prompt_file: PromptFileOpt = None,
+    name: NameOpt = None,
+    count: CountOpt = 1,
+    param: ParamOpt = None,
+    no_wait: NoWaitOpt = False,
+    project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Edit --video as the prompt says (Genjutsu object swap: put the --ref object in)."""
+    generate(
+        ctx,
+        kind="video",
+        mode="edit",
+        model=model,
+        flags={"prompt": prompt, "video": video, "ref": ref or None, "audio": audio, "quality": quality},
+        prompt_file=prompt_file,
+        params=param,
+        name=name,
+        count=count,
+        project=project,
+        yes=yes,
+        no_wait=no_wait,
+        as_json=as_json,
+    )
+
+
+@app.command("vref")
+def vref(
+    ctx: typer.Context,
+    model: ModelOpt = None,
+    video: VideoOpt = None,
+    ref: RefOpt = None,
+    quality: QualityOpt = None,
+    duration: DurationOpt = None,
+    aspect: AspectOpt = None,
+    prompt: PromptOpt = None,
+    prompt_file: PromptFileOpt = None,
+    name: NameOpt = None,
+    count: CountOpt = 1,
+    param: ParamOpt = None,
+    no_wait: NoWaitOpt = False,
+    project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Video reference: a new video in the style or camera work of --video."""
+    generate(
+        ctx,
+        kind="video",
+        mode="vref",
+        model=model,
+        flags={
+            "prompt": prompt,
+            "video": video,
+            "ref": ref or None,
+            "quality": quality,
+            "duration": duration,
+            "aspect": aspect,
+        },
+        prompt_file=prompt_file,
+        params=param,
+        name=name,
+        count=count,
+        project=project,
+        yes=yes,
+        no_wait=no_wait,
+        as_json=as_json,
+    )
+
+
+@app.command("extend")
+def extend(
+    ctx: typer.Context,
+    model: ModelOpt = None,
+    video: VideoOpt = None,
+    ref: RefOpt = None,
+    audio: AudioOpt = None,
+    quality: QualityOpt = None,
+    duration: DurationOpt = None,
+    prompt: PromptOpt = None,
+    prompt_file: PromptFileOpt = None,
+    name: NameOpt = None,
+    count: CountOpt = 1,
+    param: ParamOpt = None,
+    no_wait: NoWaitOpt = False,
+    project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Continue --video as the prompt says."""
+    generate(
+        ctx,
+        kind="video",
+        mode="extend",
+        model=model,
+        flags={
+            "prompt": prompt,
+            "video": video,
+            "ref": ref or None,
+            "audio": audio,
+            "quality": quality,
+            "duration": duration,
+        },
+        prompt_file=prompt_file,
+        params=param,
+        name=name,
+        count=count,
+        project=project,
+        yes=yes,
+        no_wait=no_wait,
+        as_json=as_json,
+    )
+
+
+@app.command("motion")
+def motion(
+    ctx: typer.Context,
+    model: ModelOpt = None,
+    video: VideoOpt = None,
+    image: ImageOpt = None,
+    quality: QualityOpt = None,
+    prompt: PromptOpt = None,
+    prompt_file: PromptFileOpt = None,
+    name: NameOpt = None,
+    count: CountOpt = 1,
+    param: ParamOpt = None,
+    no_wait: NoWaitOpt = False,
+    project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Motion control: the character of --image moves like the one in --video."""
+    generate(
+        ctx,
+        kind="video",
+        mode="motion",
+        model=model,
+        flags={"prompt": prompt, "video": video, "image": image, "quality": quality},
+        prompt_file=prompt_file,
+        params=param,
+        name=name,
+        count=count,
+        project=project,
+        yes=yes,
+        no_wait=no_wait,
+        as_json=as_json,
+    )
+
+
+@app.command("restyle")
+def restyle(
+    ctx: typer.Context,
+    model: ModelOpt = None,
+    video: VideoOpt = None,
+    ref: RefOpt = None,
+    quality: QualityOpt = None,
+    prompt: PromptOpt = None,
+    prompt_file: PromptFileOpt = None,
+    name: NameOpt = None,
+    count: CountOpt = 1,
+    param: ParamOpt = None,
+    no_wait: NoWaitOpt = False,
+    project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Restyle --video with a Preset (-p preset_id=...)."""
+    generate(
+        ctx,
+        kind="video",
+        mode="restyle",
+        model=model,
+        flags={"prompt": prompt, "video": video, "ref": ref or None, "quality": quality},
         prompt_file=prompt_file,
         params=param,
         name=name,

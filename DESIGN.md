@@ -265,17 +265,26 @@ parameters (`resolution` / `mode=std|pro|4k`, etc.).
 
 How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcli.video`):
 
-- **One subcommand per Mode code.** `higgs video t2v|i2v` now; #17 adds `ref`, `vref`, `edit`, `extend`,
-  `motion` and `restyle` the same way (each Mode code of §6 is its own subcommand, so `vref` and `restyle`
-  are not folded into other commands), and #18 adds `higgs image t2i|i2i`. A subcommand only declares the
-  options that make sense for its Mode and calls `hfcli.convenience.generate(kind=..., mode=..., flags=...)`.
+- **One subcommand per Mode code.** `higgs video t2v|i2v|ref|vref|edit|extend|motion|restyle` (each Mode
+  code of §6 is its own subcommand, so `vref` and `restyle` are not folded into other commands), and #18 adds
+  `higgs image t2i|i2i`. A subcommand only declares the options that make sense for its Mode and calls
+  `hfcli.convenience.generate(kind=..., mode=..., flags=...)`.
+- **Inputs.** `--video` → `video_url`, else `video_urls` (a list of one); `--audio` → `audio_url`, else
+  `audio_urls`; `--ref` (repeatable) → `image_urls`, in the order given, so the n-th `--ref` is `<<<image_n>>>`.
+  `--ref` takes images only: where the references are videos (Wan 2.6 ref, Kling O3/Omni vref) the video is
+  `--video`, and several videos go in `-p video_urls=[...]`. A flag's spelling can be Mode-specific
+  (`Flag.mode_params`): in `motion`, `--image` (the character) is also Genjutsu motion transfer's `image_urls`,
+  while elsewhere `image_urls` belongs to `--ref`. Rare Model-specific parameters (`character_orientation`,
+  `keep_original_sound`, `elements`, `generate_audio`, Cinema Studio's camera settings) stay `-p`; restyle's
+  Preset is `-p preset_id=<uuid>` until `--preset` (#22).
 - **Alias table, not per-model code.** `hfcore.flags.FLAGS` lists, per flag, the parameter names that can
   carry it, most specific first (`--image` → `image_url`, `first_frame_url`, `start_image_url`). For each
   flag the first parameter the Endpoint has, whose `enum` (if any) accepts the value, wins; the value is
   converted to the parameter's type (`"5"` → `5`), an allowed value is matched case-insensitively, and an
   array parameter gets a one-item list. A flag with no such parameter is `unsupported_flag`. A new flag or a
   new spelling is one entry in the table; `MODE_REQUIRED` lists what a Mode cannot do without (t2v: prompt,
-  i2v: image).
+  i2v: image, vref/edit/extend/restyle: video, motion: video and image; `ref` none, since its references may
+  be images, videos or audio and the schema says which it needs).
 - **`--quality`** picks the quality tier when the Model has tiers in the Mode (§6); otherwise it maps through
   the table (`mode`, `resolution`, `quality`). LTX-2.5 has both tiers and `resolution`: `--quality` is the tier
   and `resolution` is passed with `-p`.
