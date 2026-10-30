@@ -88,6 +88,7 @@ def train_soul(
     *,
     version: str,
     cwd: Path,
+    force: bool = False,
 ) -> Soul:
     """Upload the images, start the training and register the Soul ID; returns at once (see `wait_for_soul`).
 
@@ -98,6 +99,15 @@ def train_soul(
             f"A Soul ID is trained on {MIN_IMAGES}–{MAX_IMAGES} images, got {len(images)}",
             hint="Pass the training images after the name: higgs soul train <name> inputs/a.jpg inputs/b.jpg ...",
             code="soul_image_count",
+        )
+    if not force and (taken := load_souls().get(name)) is not None:
+        raise HiggsError(
+            f"A Soul ID named {name} is already registered ({taken.version}, {taken.status}, id {taken.id})",
+            hint=(
+                "Pick another name, or pass --force to register the new training under this name "
+                "(the old Soul ID stays on the account; only its name here is taken over)."
+            ),
+            code="soul_exists",
         )
     resolved = inputs.resolve_inputs(client, project, {"input_images": list(images)}, cwd=cwd)
     urls: list[str] = resolved.params["input_images"]

@@ -232,3 +232,37 @@ def test_a_failed_create_is_not_retried_and_registers_nothing(higgs, project, ph
     # Creating a Soul ID has no Idempotency-Key: retrying an ambiguous failure could train it twice.
     assert create.call_count == 1
     assert not (config_dir / "souls.toml").exists()
+
+
+OTHER_ID = "9f6c0b1e-2d4a-4e8b-8c3f-7a5d1e0b2c44"
+
+
+def train(higgs, respx_mock, name: str, *, version: str = "v2", status: str = "completed", soul_id: str = SOUL_ID, args=()):
+    """Train a Soul ID through the CLI (images uploaded, created, polled to `status`)."""
+    mock_uploads(respx_mock)
+    respx_mock.post(CREATE_URL).mock(
+        return_value=httpx.Response(200, json=reference("not_ready", soul_id=soul_id, name=name, version=version))
+    )
+    respx_mock.get(f"{CREATE_URL}/{soul_id}").mock(
+        return_value=httpx.Response(200, json=reference(status, soul_id=soul_id, name=name, version=version))
+    )
+    return higgs("soul", "train", name, "inputs/front.jpg", "--version", version, "--json", *args)
+
+
+def test_a_taken_name_fails_before_any_upload_unless_forced(higgs, project, photos, api_key, respx_mock, config_dir):
+    assert train(higgs, respx_mock, "alice").exit_code == 0
+    respx_mock.reset()
+
+    taken = higgs("soul", "train", "alice", *photos, "--json")
+
+    assert taken.exit_code == 1
+    error = json.loads(taken.output)["error"]
+    assert error["code"] == "soul_exists"
+    assert "--force" in error["hint"]
+    assert not respx_mock.calls
+
+    forced = train(higgs, respx_mock, "alice", version="cinema", soul_id=OTHER_ID, args=["--force"])
+
+    assert forced.exit_code == 0, forced.output
+    registered = souls_toml(config_dir)["souls"]["alice"]
+    assert (registered["id"], registered["version"]) == (OTHER_ID, "cinema")

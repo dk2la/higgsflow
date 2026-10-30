@@ -35,6 +35,9 @@ def train(
         str,
         typer.Option("--version", "-v", help="The SOUL Model it is for: v1 (soul), v2 (soul-v2) or cinema (soul-cinema)."),
     ] = souls.DEFAULT_VERSION,
+    force: Annotated[
+        bool, typer.Option("--force", help="Register under a name that is taken (the old Soul ID stays on the account).")
+    ] = False,
     no_wait: Annotated[bool, typer.Option("--no-wait", help="Return right after the training starts.")] = False,
     project: ProjectOpt = None,
     as_json: JsonOpt = False,
@@ -42,7 +45,7 @@ def train(
     """Train a Soul ID from Project images and register it by name."""
     target = current_project(project)
     with ApiClient(credentials.load_credentials()) as client:
-        soul = souls.train_soul(client, target, name, images or [], version=version, cwd=Path.cwd())
+        soul = souls.train_soul(client, target, name, images or [], version=version, cwd=Path.cwd(), force=force)
         if not no_wait:
             with _waiting(soul, quiet=as_json) as on_progress:
                 soul = souls.wait_for_soul(client, soul, on_progress=on_progress)
