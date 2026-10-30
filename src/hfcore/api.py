@@ -83,7 +83,23 @@ class Deleted(ApiModel):
     status: str = "deleted"
 
 
-_CANCEL_HINT = "Only a queued Request can be canceled; once it finishes, `higgs delete` removes its data."
+class CustomReference(ApiModel):
+    """A Soul ID (`POST /v1/custom-references`, `GET /v1/custom-references/{id}`): a character reference.
+
+    Statuses: `not_ready`, `queued`, `in_progress`, `completed`, `failed`.
+    """
+
+    id: str
+    status: str
+    name: str | None = None
+    model_version: str | None = None
+    thumbnail_url: str | None = None
+    created_at: datetime | None = None
+    in_progress_at: datetime | None = None
+    fail_reason: str | None = None
+
+
+_CANCEL_HINT ="Only a queued Request can be canceled; once it finishes, `higgs delete` removes its data."
 _DELETE_HINT = "Wait until it finishes, or stop a queued one with `higgs cancel` first."
 _NOT_FOUND_HINT = "It does not exist or belongs to another account; check the key in use."
 
@@ -195,6 +211,29 @@ class ApiClient:
             {409: ("request_active", "is still queued or in progress and cannot be deleted yet", _DELETE_HINT)},
         )
         return _parse(Deleted, response)
+
+    def create_custom_reference(self, body: dict[str, Any]) -> CustomReference:
+        """Start training a Soul ID (`POST /v1/custom-references`); not a Request, no Idempotency-Key.
+
+        Too many trainings at once is a 429 with `Retry-After`; nothing is charged for it.
+        """
+        return _parse(CustomReference, self._call("POST", "/v1/custom-references", json=body))
+
+    def custom_reference(self, reference_id: str) -> CustomReference:
+        """The training status of a Soul ID (`GET /v1/custom-references/{id}`)."""
+        try:
+            response = self._call("GET", f"/v1/custom-references/{reference_id}")
+        except ApiError as error:
+            if error.status != 404:
+                raise
+            raise ApiError(
+                f"Soul ID {reference_id} is unknown to the API",
+                status=error.status,
+                correlation_id=error.correlation_id,
+                hint="Soul IDs belong to the account that trained them; check the key in use.",
+                code="api_soul_not_found",
+            ) from None
+        return _parse(CustomReference, response)
 
     def list_models(self) -> Any:
         """The undocumented `GET /models`, as raw JSON: its format is unknown, so callers must tolerate anything."""

@@ -1,0 +1,120 @@
+"""`higgs soul train|list|status`: Soul IDs, registered by name in `<config dir>/souls.toml` (DESIGN.md §7).
+
+A Soul ID belongs to the account, not to a Project: `train` uploads its images from the
+Project like Inputs, but the training is not a Request (nothing in `.hf/requests/`, no
+Spend). `list` reads the registry only; `status` asks the API and updates it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Annotated, Any
+
+import typer
+from rich.markup import escape
+from rich.table import Table
+
+from hfcore import credentials, souls
+from hfcore.api import ApiClient
+from hfcli.output import JsonOpt, console, err_console, print_json
+from hfcli.projects import ProjectOpt, current_project
+
+app = typer.Typer(
+    name="soul", help="Train and list Soul IDs (account-scoped characters, used as --soul <name>).", no_args_is_help=True
+)
+
+
+@app.command("train")
+def train(
+    name: Annotated[str, typer.Argument(help="The name to register the Soul ID under, used as --soul <name>.")],
+    images: Annotated[
+        list[str] | None, typer.Argument(help="1–100 training images: files in the Project or References (@name).")
+    ] = None,
+    version: Annotated[
+        str,
+        typer.Option("--version", "-v", help="The SOUL Model it is for: v1 (soul), v2 (soul-v2) or cinema (soul-cinema)."),
+    ] = souls.DEFAULT_VERSION,
+    force: Annotated[
+        bool, typer.Option("--force", help="Register under a name that is taken (the old Soul ID stays on the account).")
+    ] = False,
+    no_wait: Annotated[bool, typer.Option("--no-wait", help="Return right after the training starts.")] = False,
+    project: ProjectOpt = None,
+    as_json: JsonOpt = False,
+) -> None:
+    """Train a Soul ID from Project images and register it by name."""
+    target = current_project(project)
+    with ApiClient(credentials.load_credentials()) as client:
+        soul = souls.train_soul(client, target, name, images or [], version=version, cwd=Path.cwd(), force=force)
+        if not no_wait:
+            with _waiting(soul, quiet=as_json) as on_progress:
+                soul = souls.wait_for_soul(client, soul, on_progress=on_progress)
+    if soul.status == "failed":
+        raise souls.SoulTrainingFailed(soul)
+    if as_json:
+        print_json(_soul_json(soul))
+        return
+    typer.echo(f"Soul ID {soul.name} ({soul.version}): {soul.status}")
+    typer.echo(f"Registered in {souls.souls_path()}")
+    _echo_next_step(soul)
+    typer.echo(
+        "The training's price is not estimated (the API documents none) and is not counted in the Project's Spend."
+    )
+
+
+def _echo_next_step(soul: souls.Soul) -> None:
+    if soul.status == "completed":
+        model = souls.VERSIONS.get(soul.version)
+        typer.echo(f"Use it with: higgs image t2i --model {model.model if model else '<SOUL Model>'} --soul {soul.name}")
+    elif not soul.is_terminal:
+        typer.echo(f"Check on it with: higgs soul status {soul.name}")
+
+
+@app.command("list")
+def list_souls(as_json: JsonOpt = False) -> None:
+    """List the registered Soul IDs (from souls.toml; the API cannot list them)."""
+    found = sorted(souls.load_souls().values(), key=lambda soul: soul.name)
+    if as_json:
+        print_json({"souls": found, "path": str(souls.souls_path())})
+        return
+    if not found:
+        typer.echo("No Soul IDs registered yet. Train one with `higgs soul train <name> <images...>`.")
+        return
+    table = Table()
+    for header in ("Name", "Version", "Status", "Id"):
+        table.add_column(header, no_wrap=True)
+    for soul in found:
+        table.add_row(escape(soul.name), soul.version, escape(soul.status), soul.id)
+    console.print(table)
+
+
+@app.command("status")
+def status(
+    name: Annotated[str, typer.Argument(help="A registered Soul ID (see `higgs soul list`).")],
+    as_json: JsonOpt = False,
+) -> None:
+    """Ask the API how a Soul ID's training is going and update souls.toml."""
+    with ApiClient(credentials.load_credentials()) as client:
+        soul = souls.refresh_soul(client, name)
+    if as_json:
+        print_json(_soul_json(soul))
+        return
+    reason = f" ({soul.fail_reason})" if soul.status == "failed" and soul.fail_reason else ""
+    typer.echo(f"Soul ID {soul.name} ({soul.version}): {soul.status}{reason}")
+    _echo_next_step(soul)
+
+
+def _soul_json(soul: souls.Soul) -> dict[str, Any]:
+    return {"soul": soul, "path": str(souls.souls_path())}
+
+
+@contextmanager
+def _waiting(soul: souls.Soul, *, quiet: bool) -> Iterator[souls.SoulProgress]:
+    """A spinner with the training's latest status (on stderr); nothing when `quiet` (JSON mode)."""
+    if quiet:
+        yield lambda status: None
+        return
+    name = escape(soul.name)
+    with err_console.status(f"Training Soul ID {name}...") as spinner:
+        yield lambda status: spinner.update(f"Soul ID {name}: {escape(status.status)}")

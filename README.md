@@ -50,6 +50,8 @@ higgs image t2i -m soul-v2 -q 1080p --aspect 3:4 --prompt "Editorial portrait" -
                                  # one Request, four Generations: ..._v01-1.png ... _v01-4.png
 higgs image t2i -m grok-image-2.0 --image @hero --image inputs/style.png --prompt "Hero in this style"
 higgs image i2i -m qwen-image-3 --image inputs/street.jpg --prompt "Make it night, wet asphalt"
+higgs soul train alice inputs/alice/*.jpg   # trains a Soul ID (v2 by default) and registers it in souls.toml
+higgs image t2i -m soul-v2 --soul alice --prompt "Alice on a rooftop at dawn"
 higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=4
                                  # validates, submits a Request, waits for it and downloads the Generations
 higgs gen bytedance/seedance-2.0/text-to-video -p prompt="Waves at dusk" --name sunset-beach \
@@ -158,7 +160,7 @@ fails fails the command after the others are downloaded. `--json` always prints 
 ### Images: `higgs image t2i|i2i`
 
 `higgs image <mode>` works like `higgs video <mode>`, with the same `--model`, `--prompt`/`--prompt-file`,
-`--aspect`, `--quality`, `--seed`, `--name`, `--count`, `-p`, `--no-wait`, `--yes`, `--no-input`, `--json` and
+`--aspect`, `--quality`, `--seed`, `--soul`, `--name`, `--count`, `-p`, `--no-wait`, `--yes`, `--no-input`, `--json` and
 `--project`. `t2i` covers every text-to-image Model (SOUL, SOUL V2, SOUL Cinema, Marketing Studio Image,
 Grok Image 2.0, Recraft V4.1, Qwen Image 3, Ideogram v4, Z-Image Turbo), including those that also take
 reference images; `i2i` is Qwen Image 3 edit. Ads Studio is only reachable with `higgs gen`.
@@ -169,6 +171,7 @@ reference images; `i2i` is Qwen Image 3 edit. Ads Studio is only reachable with 
 | `--aspect` | `aspect_ratio` |
 | `--quality` | `resolution` (`1k`, `2k`, `4k`, `720p`, `1080p`), `quality` (`low` … `max`), `rendering_speed` (Ideogram: `turbo`, `default`, `quality`), whichever allows the value |
 | `--seed` | `seed` (SOUL, Qwen Image 3, Z-Image Turbo) |
+| `--soul <name>` | `custom_reference_id` (SOUL, SOUL V2, SOUL Cinema): the registered Soul ID's id, see below |
 
 `--image` takes a file in the Project or a Reference (`@hero`), uploaded like any Input; giving it twice to a
 Model that takes one image fails before anything is sent (`too_many_values`). Grok and Marketing Studio
@@ -185,6 +188,51 @@ aspect = "3:4"
 A Model's own `batch_size` (SOUL: 1 or 4) is an ordinary `-p` parameter: one Request whose Generations are
 numbered `..._v01-1.png`, `..._v01-2.png`, ... . It combines with `--count`: `--count 2 -p batch_size=4`
 submits two Requests (`v01`, `v02`, one price confirmation), each with four Generations (`v01-1` … `v02-4`).
+
+### Soul IDs: `higgs soul train|list|status` and `--soul`
+
+A Soul ID is a character trained on the Higgsfield side from photos; it belongs to the account, not to a
+Project, so it is registered by name in the global `~/.config/higgs/souls.toml` and usable from any Project.
+
+```sh
+higgs soul train alice inputs/alice/*.jpg      # 1–100 images (files in the Project or @References)
+higgs soul train alice-cinema @front @side --version cinema --no-wait
+higgs soul status alice-cinema                 # asks the API how the training is going, updates souls.toml
+higgs soul list                                # name, version, status and id of every registered Soul ID
+higgs image t2i -m soul-v2 --soul alice --prompt "Alice on a rooftop at dawn"
+```
+
+- `soul train <name> <images...>` checks everything locally first (the name, the version, 1–100 images, each
+  a jpeg/png/webp/gif inside the projects root), uploads the images like Inputs (cached in the Project's
+  `.hf/uploads.json`), starts the training (`POST /v1/custom-references`) and registers the Soul ID in
+  `souls.toml` at once, so its id survives a dropped connection. It then polls until `completed` or `failed`
+  (a failed training exits with `soul_training_failed` and its `fail_reason`); `--no-wait` returns right away
+  and `soul status <name>` checks later. Too many trainings at once (429) waits for `Retry-After` and starts
+  again; any other failure to start is not retried, since the start has no Idempotency-Key.
+- `--version`: `v1` for SOUL (`soul`), `v2` for SOUL V2 (`soul-v2`, the default; the API's own default is
+  `v1`) or `cinema` for SOUL Cinema (`soul-cinema`).
+- A name is letters, digits, `.`, `_`, `-` (up to 100; it is also sent as the API's `name`). A taken name fails
+  unless `--force`, which registers the new training under it; the old Soul ID stays on the account (the API
+  cannot delete it) and its id is only dropped from `souls.toml`.
+- Training is not a Request: nothing goes to `.hf/requests/` and it is not in the Project's Spend. Its price
+  is not documented and there is no estimate for it, so `soul train` neither shows nor confirms a price.
+- `--soul <name>` (`higgs image t2i|i2i`) sends the registered id as `custom_reference_id`. It fails before
+  anything is sent when the name is unknown (`soul_not_found`, listing the registered names), the Model takes
+  no Soul ID (`unsupported_flag`), the Soul ID's version is not the Model's (`soul_version_mismatch`: a v1
+  Soul ID on `soul-v2`) or its training has not completed (`soul_not_ready`; a status that is not final yet
+  is first checked with the API once) or failed. `-p custom_reference_id=<id>` bypasses all of these checks.
+
+```toml
+# ~/.config/higgs/souls.toml (written by higgs)
+[souls.alice]
+id = "3eb1d5a2-7f3c-4c1e-9f0a-2b6d8c4e1a90"
+version = "v2"
+status = "completed"
+images = 12
+project = "demo"
+created_at = 2026-10-30T12:00:00Z
+updated_at = 2026-10-30T12:04:10Z
+```
 
 ### Presets: `higgs presets list` and `--preset`
 

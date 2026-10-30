@@ -31,7 +31,7 @@ from typing import Annotated, Any
 import typer
 
 from hfcore import flags as common_flags
-from hfcore import presets, prompts
+from hfcore import presets, prompts, souls
 from hfcore.api import ApiClient
 from hfcore.catalog import Catalog, Endpoint, load_catalog
 from hfcore.config import config_dir
@@ -107,6 +107,10 @@ PresetOpt = Annotated[
         help="A Preset by name or id, where the Model takes Presets (see `higgs presets list <catalog>`).",
     ),
 ]
+SoulOpt = Annotated[
+    str | None,
+    typer.Option("--soul", help="A Soul ID registered with `higgs soul train`, for the SOUL Model of its version."),
+]
 NoWaitOpt = Annotated[bool, typer.Option("--no-wait", help="Return the request ids right after submitting.")]
 
 
@@ -137,6 +141,8 @@ def generate(
         flags = {**flags, "prompt": prompts.read_prompt_file(target, prompt_file, cwd=Path.cwd())}
     defaults = common_flags.project_defaults(load_config(target).defaults, kind)
     endpoint, flags = _endpoint(ctx, load_catalog(config_dir()), mode, model, flags, defaults)
+    if flags.get("soul") is not None:
+        flags["soul"] = souls.soul_reference_id(endpoint, flags["soul"], refresh=_refresh_soul)
     flags = common_flags.fill_defaults(endpoint, flags, defaults)
     for key in common_flags.missing_flags(endpoint, flags, extra):
         flag = common_flags.FLAGS[key]
@@ -154,6 +160,12 @@ def generate(
     for result in batch.results:
         echo_result(result, target)
     batch.raise_unfinished()
+
+
+def _refresh_soul(soul: souls.Soul) -> souls.Soul:
+    """Ask the API about a Soul ID whose registered training status is not final (`--soul`)."""
+    with ApiClient(load_credentials()) as client:
+        return souls.refresh_status(client, soul)
 
 
 def _apply_preset(endpoint: Endpoint, flags: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:

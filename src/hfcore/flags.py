@@ -74,6 +74,8 @@ FLAGS: dict[str, Flag] = {
         # A Preset's id, once `hfcore.presets.find_preset` has looked the name up: SOUL's
         # `style_id`, Genjutsu Restyle's and Marketing Studio's `preset_id`.
         Flag("preset", "--preset", ("style_id", "preset_id")),
+        # `--soul <name>`: the name is swapped for the Soul ID's id (`hfcore.souls.soul_reference_id`) first.
+        Flag("soul", "--soul", ("custom_reference_id",)),
     )
 }
 
