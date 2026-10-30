@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Self
 
@@ -42,6 +43,12 @@ class Submitted(ApiModel):
     status_url: str | None = None
     cancel_url: str | None = None
     expires_after: int | None = None
+
+
+class Estimate(ApiModel):
+    """`POST /estimate/{endpoint}`: the exact price of a Request with this body, in USD."""
+
+    usd: Decimal
 
 
 class RequestStatus(ApiModel):
@@ -106,6 +113,10 @@ class ApiClient:
             "POST", f"/{endpoint}", json=params, headers={"Idempotency-Key": idempotency_key}
         )
         return _parse(Submitted, response)
+
+    def estimate(self, endpoint: str, params: dict[str, Any]) -> Estimate:
+        """The exact price of submitting `params` to an Endpoint (`POST /estimate/{endpoint}`); free."""
+        return _parse(Estimate, self._call("POST", f"/estimate/{endpoint.strip('/')}", json=params))
 
     def status(self, request_id: str) -> RequestStatus:
         """The current status and outputs of a Request (`GET /requests/{id}/status`)."""
@@ -278,7 +289,8 @@ def api_error(response: httpx.Response) -> ApiError:
     """Map an error response to a specific, actionable `ApiError` (DESIGN.md §9)."""
     status = response.status_code
     api_code, detail = _error_details(response)
-    path = response.request.url.path.strip("/")
+    # The Endpoint id, also when the failed call was its estimate.
+    path = response.request.url.path.strip("/").removeprefix("estimate/")
 
     def error(code: str, message: str, hint: str | None = None) -> ApiError:
         return ApiError(

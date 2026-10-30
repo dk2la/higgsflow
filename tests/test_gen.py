@@ -22,12 +22,12 @@ def submitted(**headers: str) -> httpx.Response:
     return httpx.Response(200, json=SUBMITTED, headers={"X-Correlation-ID": "corr-1", **headers})
 
 
-def test_gen_submits_the_request_and_writes_its_record(higgs, project, api_key, respx_mock):
+def test_gen_submits_the_request_and_writes_its_record(higgs, project, api_key, respx_mock, estimate):
     route = respx_mock.post(SUBMIT_URL).mock(return_value=submitted())
 
     result = higgs(
         "gen", ENDPOINT, "-p", "prompt=Editorial portrait in soft daylight", "-p", "batch_size=2",
-        "--no-validate", "--no-wait", "--json",
+        "--no-validate", "--no-wait", "--json", "--yes",
     )
 
     assert result.exit_code == 0, result.output
@@ -54,10 +54,10 @@ def test_gen_submits_the_request_and_writes_its_record(higgs, project, api_key, 
 
 
 def gen(higgs, *args: str):
-    return higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--no-wait", "--json", *args)
+    return higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--no-wait", "--json", "--yes", *args)
 
 
-def test_gen_from_a_nested_subfolder_finds_the_project(higgs, project, api_key, respx_mock, monkeypatch):
+def test_gen_from_a_nested_subfolder_finds_the_project(higgs, project, api_key, respx_mock, estimate, monkeypatch):
     respx_mock.post(SUBMIT_URL).mock(return_value=submitted())
     nested = project / "generations" / "2026-10-30"
     nested.mkdir(parents=True)
@@ -70,7 +70,7 @@ def test_gen_from_a_nested_subfolder_finds_the_project(higgs, project, api_key, 
 
 
 def test_project_option_overrides_the_project_around_the_current_directory(
-    higgs, project, projects_root, api_key, respx_mock
+    higgs, project, projects_root, api_key, respx_mock, estimate
 ):
     respx_mock.post(SUBMIT_URL).mock(return_value=submitted())
     higgs("init", "other")
@@ -90,7 +90,7 @@ def test_project_option_with_an_unknown_name_fails(higgs, project, api_key, resp
     assert not respx_mock.calls
 
 
-def test_param_values_are_sent_as_json_types(higgs, project, api_key, respx_mock):
+def test_param_values_are_sent_as_json_types(higgs, project, api_key, respx_mock, estimate):
     route = respx_mock.post(SUBMIT_URL).mock(return_value=submitted())
 
     result = higgs(
@@ -99,7 +99,7 @@ def test_param_values_are_sent_as_json_types(higgs, project, api_key, respx_mock
         "-p", "images=[\"https://cdn.example.com/a.jpg\"]", "-p", "camera={\"zoom\": 1}",
         "-p", "aspect_ratio=16:9", "-p", "code=007", "-p", "prompt=a = b", "-p", "empty=",
         "-p", "label=\"42\"", "-p", "odd=NaN",
-        "--no-validate", "--no-wait", "--json",
+        "--no-validate", "--no-wait", "--json", "--yes",
     )
 
     assert result.exit_code == 0, result.output
@@ -183,7 +183,7 @@ API_ERRORS = [
 
 @pytest.mark.parametrize(("status", "body", "code"), API_ERRORS)
 def test_api_errors_map_to_specific_errors_with_the_correlation_id(
-    higgs, project, api_key, respx_mock, status, body, code
+    higgs, project, api_key, respx_mock, estimate, status, body, code
 ):
     respx_mock.post(SUBMIT_URL).mock(
         return_value=httpx.Response(status, json=body, headers={"X-Correlation-ID": "corr-err"})
@@ -200,12 +200,12 @@ def test_api_errors_map_to_specific_errors_with_the_correlation_id(
     assert not list((project / ".hf" / "requests").iterdir())
 
 
-def test_an_api_error_as_text_shows_the_message_and_correlation_id(higgs, project, api_key, respx_mock):
+def test_an_api_error_as_text_shows_the_message_and_correlation_id(higgs, project, api_key, respx_mock, estimate):
     respx_mock.post(SUBMIT_URL).mock(
         return_value=httpx.Response(401, json={"detail": "Invalid credentials"}, headers={"X-Correlation-ID": "corr-err"})
     )
 
-    result = higgs("gen", ENDPOINT, "--no-validate", "--no-wait")
+    result = higgs("gen", ENDPOINT, "--no-validate", "--no-wait", "--yes")
 
     assert result.exit_code == 1
     output = " ".join(result.output.split())  # Rich wraps long lines
@@ -214,7 +214,7 @@ def test_an_api_error_as_text_shows_the_message_and_correlation_id(higgs, projec
     assert "corr-err" in output
 
 
-def test_an_insufficient_balance_points_to_the_console(higgs, project, api_key, respx_mock):
+def test_an_insufficient_balance_points_to_the_console(higgs, project, api_key, respx_mock, estimate):
     respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(403, json={"detail": "Insufficient balance"}))
 
     error = json.loads(gen(higgs).output)["error"]
@@ -222,7 +222,7 @@ def test_an_insufficient_balance_points_to_the_console(higgs, project, api_key, 
     assert "console.higgsfield.ai" in error["hint"]
 
 
-def test_a_submit_response_without_a_request_id_is_an_error(higgs, project, api_key, respx_mock):
+def test_a_submit_response_without_a_request_id_is_an_error(higgs, project, api_key, respx_mock, estimate):
     respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(200, json={"status": "queued"}))
 
     result = gen(higgs)
@@ -232,7 +232,7 @@ def test_a_submit_response_without_a_request_id_is_an_error(higgs, project, api_
     assert not list((project / ".hf" / "requests").iterdir())
 
 
-def test_each_submit_carries_a_new_idempotency_key(higgs, project, api_key, respx_mock):
+def test_each_submit_carries_a_new_idempotency_key(higgs, project, api_key, respx_mock, estimate):
     route = respx_mock.post(SUBMIT_URL).mock(return_value=submitted())
 
     gen(higgs)
@@ -242,16 +242,16 @@ def test_each_submit_carries_a_new_idempotency_key(higgs, project, api_key, resp
     assert len(keys) == 2
 
 
-def test_gen_as_text_prints_the_request_id(higgs, project, api_key, respx_mock):
+def test_gen_as_text_prints_the_request_id(higgs, project, api_key, respx_mock, estimate):
     respx_mock.post(SUBMIT_URL).mock(return_value=submitted())
 
-    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--no-wait")
+    result = higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--no-wait", "--yes")
 
     assert result.exit_code == 0
     assert REQUEST_ID in result.output
 
 
-def test_a_network_failure_is_reported_as_an_error(higgs, project, api_key, respx_mock):
+def test_a_network_failure_is_reported_as_an_error(higgs, project, api_key, respx_mock, estimate):
     respx_mock.post(SUBMIT_URL).mock(side_effect=httpx.ConnectError("connection refused"))
 
     result = gen(higgs)

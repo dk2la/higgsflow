@@ -11,6 +11,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
@@ -92,6 +93,18 @@ def clock(monkeypatch) -> FakeClock:
     monkeypatch.setattr(hfcore.clock, "now", fake.now)
     monkeypatch.setattr(hfcore.clock, "sleep", fake.sleep)
     return fake
+
+
+@pytest.fixture
+def estimate(respx_mock):
+    """Every `POST /estimate/{endpoint}` answers with the docs' example price, $0.094.
+
+    A submit is always preceded by an estimate, so tests that submit use this fixture
+    (or mock the estimate themselves) and pass `--yes`.
+    """
+    return respx_mock.post(url__startswith="https://api.higgsfield.ai/estimate/").mock(
+        return_value=httpx.Response(200, json={"usd": "0.094"})
+    )
 
 
 @pytest.fixture

@@ -20,6 +20,7 @@ from hfcore.api import RequestStatus
 from hfcore.errors import HiggsError
 
 _JSON_KEY = "higgs.json"
+_NO_INPUT_KEY = "higgs.no_input"
 
 console = Console()
 err_console = Console(stderr=True)
@@ -38,14 +39,40 @@ JsonOpt = Annotated[
 ]
 
 
+def _remember_no_input(ctx: typer.Context, value: bool) -> bool:
+    if value:
+        ctx.meta[_NO_INPUT_KEY] = True
+    return value
+
+
+# For commands that may prompt (a missing parameter, the price). `--json` implies `--no-input`.
+NoInputOpt = Annotated[
+    bool,
+    typer.Option("--no-input", help="Never prompt; fail instead (for scripts).", callback=_remember_no_input),
+]
+
+# For commands that spend money (`hfcli.price.confirm_price`).
+YesOpt = Annotated[
+    bool,
+    typer.Option("--yes", "-y", help="Confirm the price without asking (required with --json or --no-input)."),
+]
+
+
 def json_mode(ctx: typer.Context) -> bool:
     return bool(ctx.meta.get(_JSON_KEY))
 
 
+def no_input(ctx: typer.Context) -> bool:
+    """True when the command must not prompt: `--no-input`, or `--json` (which implies it)."""
+    return json_mode(ctx) or bool(ctx.meta.get(_NO_INPUT_KEY))
+
+
 def ask(ctx: typer.Context, question: str, *, flag: str, hide_input: bool = False) -> str:
-    """Prompt for a missing value; in JSON mode (which implies no input) fail instead."""
-    if json_mode(ctx):
-        raise HiggsError(f"Missing {flag}", hint=f"Pass {flag}; --json never prompts.", code="missing_param")
+    """Prompt for a missing value; with no input (`--no-input`, `--json`) fail instead."""
+    if no_input(ctx):
+        raise HiggsError(
+            f"Missing {flag}", hint=f"Pass {flag}; --json and --no-input never prompt.", code="missing_param"
+        )
     return str(typer.prompt(question, hide_input=hide_input, err=True))
 
 

@@ -63,6 +63,25 @@ into the Project's `inputs/` first) and really be a jpeg, png, webp, gif, wav or
 Uploads are cached by content in `.hf/uploads.json` and reused for up to 7 days, and the Request record lists
 the Inputs it used.
 
+Before every submit `higgs gen` asks the API for the exact price (`POST /estimate/{endpoint}`, free) on the
+body it is about to send, shows it and asks for confirmation; `--yes` confirms without asking. `--no-input`
+never prompts, and `--json` implies it, so both fail with `confirmation_required` (the error carries
+`price_usd`) unless `--yes` is given. A failed estimate submits nothing. The price is stored on the Request
+record (`estimate_usd`) and in each Generation's `.json` (`price_usd`). A Project's Spend is the sum of the
+prices of its `completed` Requests. An optional Budget in USD goes at the top level of `project.toml`:
+
+```toml
+name = "demo"
+budget = 20.0
+
+[defaults]
+```
+
+When Spend plus the new price exceeds it, `higgs gen` prints a warning and still asks (with `--yes` it only
+warns); it never blocks. In JSON mode the warning is in the output's `warnings` list as
+`{"code": "over_budget", "message": ..., "spend_usd": ..., "price_usd": ..., "budget_usd": ...}`; money is
+always a decimal string.
+
 For now `higgs gen` requires `--no-validate` (validation against the catalog is not built yet).
 
 ## Development

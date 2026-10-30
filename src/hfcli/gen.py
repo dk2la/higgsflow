@@ -10,12 +10,14 @@ import typer
 from hfcore import credentials, downloads, inputs, lifecycle, requests
 from hfcore.api import ApiClient
 from hfcore.errors import HiggsError
-from hfcli.output import JsonOpt, print_json, waiting_status
+from hfcli.output import JsonOpt, NoInputOpt, YesOpt, print_json, waiting_status
 from hfcli.params import parse_params
+from hfcli.price import confirm_price
 from hfcli.projects import ProjectOpt, current_project
 
 
 def gen(
+    ctx: typer.Context,
     endpoint: Annotated[str, typer.Argument(help="Endpoint id, e.g. higgsfield-ai/soul/v2/standard.")],
     param: Annotated[
         list[str] | None,
@@ -34,6 +36,8 @@ def gen(
         str | None, typer.Option("--name", help="Slug of the Generation file names (default: first words of the prompt).")
     ] = None,
     project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
     as_json: JsonOpt = False,
 ) -> None:
     """Submit a Request to any Endpoint."""
@@ -49,13 +53,15 @@ def gen(
     target = current_project(project)
     with ApiClient(credentials.load_credentials()) as client:
         resolved = inputs.resolve_inputs(client, target, params, cwd=Path.cwd())
+        price = client.estimate(endpoint, resolved.params).usd
+        warnings = confirm_price(ctx, target, [price], yes=yes).warnings
         record = lifecycle.submit_request(
-            client, target, endpoint, resolved.params, inputs=resolved.inputs, name=name
+            client, target, endpoint, resolved.params, inputs=resolved.inputs, name=name, estimate_usd=price
         )
         path = requests.request_path(target, record.request_id)
         if no_wait:
             if as_json:
-                print_json({"request_id": record.request_id, "path": str(path), "record": record})
+                print_json({"request_id": record.request_id, "path": str(path), "record": record, "warnings": warnings})
             else:
                 typer.echo(f"Submitted Request {record.request_id} ({record.status})")
                 typer.echo(f"Record: {path}")
@@ -66,7 +72,15 @@ def gen(
             raise lifecycle.RequestNotCompleted(record)
         generations = downloads.download_request(client, target, record, status)
     if as_json:
-        print_json({"request_id": record.request_id, "path": str(path), "record": record, "generations": generations})
+        print_json(
+            {
+                "request_id": record.request_id,
+                "path": str(path),
+                "record": record,
+                "generations": generations,
+                "warnings": warnings,
+            }
+        )
     else:
         typer.echo(f"Completed Request {record.request_id}")
         for generation in generations:

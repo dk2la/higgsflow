@@ -10,6 +10,7 @@ from __future__ import annotations
 import random
 import uuid
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 from hfcore import clock
@@ -42,13 +43,15 @@ def submit_request(
     *,
     inputs: list[Input] | None = None,
     name: str | None = None,
+    estimate_usd: Decimal | None = None,
 ) -> RequestRecord:
     """Submit a Request and write its record before doing anything else.
 
     `params` must already be resolved (`hfcore.inputs.resolve_inputs`); `inputs` are the
     local files behind them, kept on the record. `name` is the slug of its Generations
     (`--name`); without it the slug comes from the prompt. The naming, including `vNN`,
-    is fixed here and stored on the record.
+    is fixed here and stored on the record. `estimate_usd` is the price confirmed for
+    this body (`hfcore.spend`); it is what the Request adds to the Project's Spend.
     """
     endpoint = endpoint.strip("/")
     prompt = params.get("prompt")
@@ -70,6 +73,7 @@ def submit_request(
         status_url=submitted.status_url,
         cancel_url=submitted.cancel_url,
         expires_after=submitted.expires_after,
+        estimate_usd=str(estimate_usd) if estimate_usd is not None else None,
         correlation_id=submitted.correlation_id,
         naming=naming,
     )

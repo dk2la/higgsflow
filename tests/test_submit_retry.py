@@ -3,6 +3,10 @@
 import json
 
 import httpx
+import pytest
+
+# Every test submits, and every submit is preceded by an estimate.
+pytestmark = pytest.mark.usefixtures("estimate")
 
 ENDPOINT = "higgsfield-ai/soul/v2/standard"
 SUBMIT_URL = f"https://api.higgsfield.ai/{ENDPOINT}"
@@ -20,7 +24,7 @@ QUEUE_FULL = {
 
 
 def gen(higgs, *args: str):
-    return higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--no-wait", "--json", *args)
+    return higgs("gen", ENDPOINT, "-p", "prompt=a cat", "--no-validate", "--no-wait", "--json", "--yes", *args)
 
 
 def keys(route) -> list[str]:

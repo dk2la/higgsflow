@@ -6,9 +6,12 @@ A Project is a folder under the projects root with a `project.toml` (DESIGN.md Â
 from __future__ import annotations
 
 import json
+import tomllib
+from decimal import Decimal
 from pathlib import Path
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from hfcore import config
 from hfcore.errors import HiggsError
@@ -25,6 +28,45 @@ class Project(BaseModel):
     def requests_dir(self) -> Path:
         """Where the Request records live (`.hf/requests/<request_id>.json`)."""
         return self.path / ".hf" / "requests"
+
+
+class ProjectConfig(BaseModel):
+    """The contents of `project.toml`.
+
+    ```toml
+    name = "demo"
+    budget = 20.0      # optional, USD: Spend over it warns, never blocks
+
+    [defaults]         # values for flags that were not given
+    ```
+
+    Unknown keys are kept, so a file written by a newer version still loads.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    name: str | None = None
+    budget: Annotated[Decimal, Field(ge=0)] | None = None
+    defaults: dict[str, Any] = {}
+
+    @field_validator("budget", mode="before")
+    @classmethod
+    def _exact_budget(cls, value: Any) -> Any:
+        # TOML floats are binary; their shortest repr is the number the user wrote (20.1, not 20.10000000000000142).
+        return str(value) if isinstance(value, float) else value
+
+
+def load_config(project: Project) -> ProjectConfig:
+    """Read the Project's `project.toml`."""
+    path = project.path / PROJECT_FILE
+    try:
+        return ProjectConfig.model_validate(tomllib.loads(path.read_text()))
+    except (tomllib.TOMLDecodeError, ValidationError) as error:
+        raise HiggsError(
+            f"Cannot read {path}: {error}",
+            hint="Fix the file; `budget` is a number of USD, e.g. `budget = 20.0`.",
+            code="invalid_project_config",
+        ) from None
 
 
 def init_project(name: str) -> Project:

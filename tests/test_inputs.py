@@ -53,10 +53,10 @@ def gen(higgs, *params: str):
     args = ["gen", ENDPOINT]
     for param in params:
         args += ["-p", param]
-    return higgs(*args, "--no-validate", "--no-wait", "--json")
+    return higgs(*args, "--no-validate", "--no-wait", "--json", "--yes")
 
 
-def test_a_local_path_is_uploaded_and_replaced_by_its_public_url(higgs, project, api_key, respx_mock):
+def test_a_local_path_is_uploaded_and_replaced_by_its_public_url(higgs, project, api_key, respx_mock, estimate):
     write(project / "inputs" / "a.jpg", JPEG)
     upload_url = respx_mock.post(UPLOAD_URL_ENDPOINT).mock(return_value=upload_url_response())
     storage = respx_mock.put(STORAGE_URL).mock(return_value=httpx.Response(200))
@@ -92,7 +92,7 @@ def read_record(project: Path) -> Any:
     return json.loads((project / ".hf" / "requests" / f"{REQUEST_ID}.json").read_text())
 
 
-def test_the_request_record_lists_the_inputs_it_used(higgs, project, api_key, respx_mock):
+def test_the_request_record_lists_the_inputs_it_used(higgs, project, api_key, respx_mock, estimate):
     write(project / "inputs" / "a.jpg", JPEG)
     mock_upload(respx_mock)
     mock_submit(respx_mock)
@@ -119,7 +119,7 @@ def read_uploads(project: Path) -> Any:
     return json.loads((project / ".hf" / "uploads.json").read_text())
 
 
-def test_an_upload_is_cached_by_content_and_reused(higgs, project, api_key, respx_mock, clock):
+def test_an_upload_is_cached_by_content_and_reused(higgs, project, api_key, respx_mock, estimate, clock):
     write(project / "inputs" / "a.jpg", JPEG)
     write(project / "inputs" / "copy-of-a.jpg", JPEG)
     upload_url = mock_upload(respx_mock)
@@ -146,7 +146,7 @@ def test_an_upload_is_cached_by_content_and_reused(higgs, project, api_key, resp
 NEW_PUBLIC_URL = "https://cdn.example.com/input/example-2.jpeg"
 
 
-def test_an_expired_upload_is_uploaded_again(higgs, project, api_key, respx_mock, clock):
+def test_an_expired_upload_is_uploaded_again(higgs, project, api_key, respx_mock, estimate, clock):
     write(project / "inputs" / "a.jpg", JPEG)
     upload_url = respx_mock.post(UPLOAD_URL_ENDPOINT).mock(
         side_effect=[upload_url_response(public_url=PUBLIC_URL), upload_url_response(public_url=NEW_PUBLIC_URL)]
@@ -207,7 +207,7 @@ def test_a_symlink_to_a_file_outside_the_projects_root_is_rejected(higgs, projec
     assert not respx_mock.calls
 
 
-def test_paths_are_relative_to_the_current_directory(higgs, project, projects_root, api_key, respx_mock, monkeypatch):
+def test_paths_are_relative_to_the_current_directory(higgs, project, projects_root, api_key, respx_mock, estimate, monkeypatch):
     write(project / "inputs" / "a.jpg", JPEG)
     higgs("init", "other")
     elsewhere = write(projects_root / "other" / "inputs" / "b.png", PNG)
@@ -257,7 +257,7 @@ MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00" * 32
     ids=["jpeg", "png", "gif", "webp", "wav", "mp4"],
 )
 def test_each_allowed_type_is_uploaded_with_its_content_type(
-    higgs, project, api_key, respx_mock, name, content, content_type
+    higgs, project, api_key, respx_mock, estimate, name, content, content_type
 ):
     write(project / "inputs" / name, content)
     upload_url = mock_upload(respx_mock, content_type)
@@ -296,7 +296,7 @@ def test_a_disallowed_file_type_fails_before_any_upload(higgs, project, api_key,
 PNG_PUBLIC_URL = "https://cdn.example.com/input/example.png"
 
 
-def test_paths_inside_lists_and_objects_are_uploaded_too(higgs, project, api_key, respx_mock):
+def test_paths_inside_lists_and_objects_are_uploaded_too(higgs, project, api_key, respx_mock, estimate):
     write(project / "inputs" / "a.jpg", JPEG)
     write(project / "inputs" / "b.png", PNG)
     upload_url = respx_mock.post(UPLOAD_URL_ENDPOINT).mock(
@@ -326,7 +326,7 @@ def test_paths_inside_lists_and_objects_are_uploaded_too(higgs, project, api_key
     ]
 
 
-def test_strings_that_are_not_files_are_sent_unchanged(higgs, project, api_key, respx_mock):
+def test_strings_that_are_not_files_are_sent_unchanged(higgs, project, api_key, respx_mock, estimate):
     submit = mock_submit(respx_mock)
     long_prompt = "a very long prompt " * 30  # longer than any file name may be
 
