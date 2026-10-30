@@ -3,7 +3,7 @@
 A Generation is a downloaded file with a `<file>.json` (`GenerationMetadata`) next to it,
 which lists its Artifacts. `copy_generation` copies all of them to another folder as real,
 independent copies (never symlinks or hard links), so the copy stays self-contained; `pick`
-uses it for `final/`, and `higgs ref save` can use it for `references/`.
+uses it for `final/`. (`higgs ref save` renames, so it has its own copy in `hfcore.references`.)
 """
 
 from __future__ import annotations
