@@ -48,6 +48,7 @@ higgs download <request-id>      # downloads a completed Request's Generations a
 higgs list --status pending --model kling --mode i2v --since 2026-10-01   # history from local files only
 higgs pick generations/2026-10-30/<file>.png
                                  # copies the Generation, its .json and Artifacts into final/
+higgs usage                      # the Project's Spend and Budget + the account's last 30 days (GET /models/usage)
 ```
 
 `status` never downloads; `sync` does, without waiting: each Request not downloaded yet gets one status
@@ -193,6 +194,40 @@ When Spend plus the new price exceeds it, `higgs gen` prints a warning and still
 warns); it never blocks. In JSON mode the warning is in the output's `warnings` list as
 `{"code": "over_budget", "message": ..., "spend_usd": ..., "price_usd": ..., "budget_usd": ...}`; money is
 always a decimal string.
+
+`higgs usage` shows what the Project has cost and what the account has used:
+
+- **Project** (from `.hf/requests/` only, no key needed): the Spend of its completed Requests, the Budget and
+  what is left of it (negative once over), and the Spend per Model and Mode. The Model is the catalog's
+  (`kling-3.0`, all its tiers together, the same value `higgs list --model` takes); an Endpoint the catalog
+  lacks is named as in its Generation names.
+- **Account**: the analytics of `GET /models/usage` for the last 30 UTC days up to now, summed per Endpoint
+  (quantity, unit, cost) with a USD total. Higgsfield calls it analytics, not a billing record: it can lag and
+  differ from the invoice. A response in a shape other than the documented one is shown as it came.
+- **Balance**: the API has no balance endpoint; `usage` points to the Console (console.higgsfield.ai).
+
+In a Project, a failing account call (no key, a rejected key, an API or network error) is a warning and
+`usage` still shows the Spend and exits 0. Outside a Project (and without `--project`) it shows the account
+only, and then a failing account call is an error (exit 1). The `--json` output:
+
+```json
+{
+  "project": {"name": "demo", "spend_usd": "0.80", "requests": 2, "budget_usd": "2.5", "remaining_usd": "1.70",
+              "by_model": [{"model": "kling-3.0", "mode": "i2v", "requests": 1, "spend_usd": "0.50"},
+                           {"model": "soul-v2", "mode": "t2i", "requests": 1, "spend_usd": "0.30"}]},
+  "account": {"start": "2026-10-01T00:00:00Z", "end": "2026-10-30T12:00:00Z", "timeframe": "day",
+              "cost_usd": "11.2800", "raw": null,
+              "by_model": [{"model": "higgsfield-ai/soul/v2/standard", "unit": "generation", "quantity": "120",
+                            "cost": "11.2800", "currency": "USD"}]},
+  "balance_url": "https://console.higgsfield.ai",
+  "warnings": []
+}
+```
+
+`project` is `null` outside a Project; `budget_usd` and `remaining_usd` are `null` without a Budget. `account`
+is `null` when the call failed, with a warning
+`{"code": "account_usage_unavailable", "message": ..., "error": {"code": "invalid_key", ...}}`; for a response
+of unknown shape it has `raw` (the body), an empty `by_model` and `cost_usd: null`.
 
 ## Development
 
