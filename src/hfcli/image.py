@@ -48,11 +48,48 @@ def t2i(
     no_input: NoInputOpt = False,
     as_json: JsonOpt = False,
 ) -> None:
-    """Text to image."""
+    """Text to image, optionally guided by reference images (--image, where the Model takes them)."""
     generate(
         ctx,
         kind="image",
         mode="t2i",
+        model=model,
+        flags={"prompt": prompt, "images": image, "quality": quality, "aspect": aspect, "seed": seed},
+        prompt_file=prompt_file,
+        params=param,
+        name=name,
+        count=count,
+        project=project,
+        yes=yes,
+        no_wait=no_wait,
+        as_json=as_json,
+    )
+
+
+@app.command("i2i")
+def i2i(
+    ctx: typer.Context,
+    model: ModelOpt = None,
+    image: ImagesOpt = None,
+    quality: QualityOpt = None,
+    aspect: AspectOpt = None,
+    prompt: PromptOpt = None,
+    prompt_file: PromptFileOpt = None,
+    seed: SeedOpt = None,
+    name: NameOpt = None,
+    count: CountOpt = 1,
+    param: ParamOpt = None,
+    no_wait: NoWaitOpt = False,
+    project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Image to image: edit the --image(s) as the prompt says."""
+    generate(
+        ctx,
+        kind="image",
+        mode="i2i",
         model=model,
         flags={"prompt": prompt, "images": image, "quality": quality, "aspect": aspect, "seed": seed},
         prompt_file=prompt_file,

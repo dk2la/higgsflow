@@ -104,6 +104,10 @@ IMAGE_MAPPINGS = [
     ("marketing-studio-image-2.5-flare", "t2i", "marketing-studio/image/flare", ["inputs/a.jpg"], {"image_urls": [UPLOAD_1]}),
     ("ideogram-4.0", "t2i", "ideogram/v4.0", ["inputs/a.jpg"], {"image_url": UPLOAD_1}),
     ("soul", "t2i", "higgsfield-ai/soul/standard", ["inputs/a.jpg"], {"image_reference_url": UPLOAD_1}),
+    (
+        "qwen-image-3", "i2i", "alibaba/qwen-image-3/edit", ["inputs/a.jpg", "inputs/b.png"],
+        {"image_urls": [UPLOAD_1, UPLOAD_2]},
+    ),
 ]
 
 
