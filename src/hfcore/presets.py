@@ -167,7 +167,7 @@ def _fetch(client: ApiClient, source: PresetSource, catalog: Catalog) -> list[Pr
         body = client.list_presets(source.path, {"size": PAGE_SIZE, "cursor": cursor})
         items = _items(body, source)
         found += [_preset(item, models) for item in items]
-        following = body.get("cursor")
+        following = body.get("cursor") if isinstance(body, dict) else None
         # A stuck or missing cursor ends the listing instead of looping.
         if not items or not isinstance(following, int) or following <= cursor:
             return found

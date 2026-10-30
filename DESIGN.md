@@ -170,6 +170,8 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
   `docs.higgsfield.ai/docs/llms-full.txt`, stored in the repo as `catalog.json` and baked into the image
   as the baseline. `higgs models sync` writes `~/.config/higgs/catalog.json`, which takes precedence
   over the baked-in one when present.
+- Presets are not part of it: the docs list none, only the API endpoints that do, so they are fetched live
+  (§7 "Presets", ADR 0004).
 - Hierarchy: Family (Kling) → Model (Kling 3.0) → Model + Mode (i2v) = exactly one Endpoint.
   If a Model has no Endpoint for the requested Mode, the CLI fails and lists the Modes it does have.
 - Per endpoint: id (= path = model string in the SDK), family, mode, parameters
@@ -254,7 +256,7 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
 | `higgs ref save <generation> <name> [--force]` | save a generation as a reference |
 | `higgs soul train <name> <images...> [--version v1\|v2\|cinema]` | train a Soul ID from project images |
 | `higgs soul list` / `higgs soul status <name>` | registered Soul IDs / training status |
-| `higgs presets list <soul-styles\|restyle\|marketing>` | preset catalogs |
+| `higgs presets list <soul-styles\|restyle\|marketing>` | Preset catalogs, fetched live with the key (ADR 0004) |
 | `higgs usage` | project spend (local) + account summary (`GET /models/usage`) |
 
 Common convenience-layer flags: `--model`, `--quality`, `--duration`, `--aspect`, `--image`,
@@ -276,7 +278,7 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   (`Flag.mode_params`): in `motion`, `--image` (the character) is also Genjutsu motion transfer's `image_urls`,
   while elsewhere `image_urls` belongs to `--ref`. Rare Model-specific parameters (`character_orientation`,
   `keep_original_sound`, `elements`, `generate_audio`, Cinema Studio's camera settings) stay `-p`; restyle's
-  Preset is `-p preset_id=<uuid>` until `--preset` (#22).
+  Preset is `--preset` (below), or `-p preset_id=<uuid>`.
 - **Alias table, not per-model code.** `hfcore.flags.FLAGS` lists, per flag, the parameter names that can
   carry it, most specific first (`--image` → `image_url`, `first_frame_url`, `start_image_url`). For each
   flag the first parameter the Endpoint has, whose `enum` (if any) accepts the value, wins; the value is
@@ -310,9 +312,32 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   one Request with several Generations `..._v01-1.png` … `-4` (§5); with `--count 2` that is `v01-1..4`,
   `v02-1..4` from one price confirmation.
 - **Hook points for `--soul` (#21) and `--preset` (#22).** Each is a `Flag` in `FLAGS` (`--soul` →
-  `custom_reference_id`) plus an option on `t2i`/`i2i` that goes into the `flags` dict; `generate` swaps the
-  name for the looked-up value right after the Endpoint is resolved (so the SOUL version can be checked) and
-  before defaults and mapping, after which it maps like any other flag.
+  `custom_reference_id`, `--preset` → `style_id`, `preset_id`) plus an option on the commands that offer it,
+  passed in the `flags` dict; `generate` swaps the name for the looked-up value once the Endpoint is resolved
+  (so the SOUL version can be checked), after which it maps like any other flag. `--preset` is swapped after
+  the prompts for missing flags (restyle's `preset_id` is required, so a name typed at the prompt is looked up
+  too) and before mapping.
+- **Presets (#22; `hfcore.presets`, `hfcli.presets`, ADR 0004).** The docs list no Presets, only the
+  authenticated endpoints that do, so both `higgs presets list <catalog>` and `--preset` fetch them live with the
+  key; nothing is baked into `catalog.json` or cached. `hfcore.presets.SOURCES` is the table, one row per list:
+
+  | Catalog | List (`GET`) | Endpoints | Parameter |
+  |---|---|---|---|
+  | `soul-styles` | `/v1/text2image/soul-styles` (a bare list) | SOUL `higgsfield-ai/soul/standard` | `style_id` |
+  | `soul-styles` | `/v1/text2image/soul-styles/v2` (a bare list) | SOUL V2 `higgsfield-ai/soul/v2/standard` | `style_id` |
+  | `restyle` | `/models/higgsfield/genjutsu/restyle/v1.0/presets` (`{model, items}`) | Genjutsu restyle | `preset_id` |
+  | `marketing` | `/marketing-studio/image/presets?size=100&cursor=N` (`{total, cursor, items}`, followed until `cursor` is null) | the three Marketing Studio Image Endpoints | `preset_id` + `enhance_prompt: true` |
+
+  An item is `{id, name, description, group, aspect_ratio, preview_url, models}` (SOUL's `description`, Marketing
+  Studio's `metadata.group_name`/`aspect_ratio` and `cover_image`; `models` are the catalog Model slugs of the
+  list's Endpoints); a style both SOUL lists have is shown once with both Models. `--preset` matches the id or
+  the name case-insensitively among the Presets of the chosen Endpoint's own lists (a SOUL V2 style is not a
+  SOUL one). Errors: an Endpoint in no list → `unsupported_flag` (before any API call, listing the Models per
+  catalog); no match → `unknown_preset` with `difflib` close names; a name several Presets share →
+  `ambiguous_preset` with their ids (and groups). Marketing Studio's `preset_id` only works with prompt
+  enhancement (the docs: `enhance_prompt=true` requires `preset_id` and 1–2 `image_urls`), so the source adds
+  `enhance_prompt: true` below `-p`. A test checks that every catalog Endpoint whose schema has a `style_id` or
+  `preset_id` is in a list, so a new one after `models sync` shows up as a failing test, not a silent gap.
 
 - `--soul <name>` resolves the name via `souls.toml` and checks that the Soul ID version matches the SOUL model.
 - Soul ID training is not a Request: it is account-scoped, is not written to the project's `.hf/` and
@@ -376,6 +401,11 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 - Soul ID: `POST /v1/custom-references` (1–100 images, `model_version` v1/v2/cinema), poll
   `GET /v1/custom-references/{id}`, then pass the id as `custom_reference_id` to a matching SOUL endpoint.
   Account-scoped; no list endpoint; too many trainings at once → 429 with `Retry-After`.
+- Presets (authenticated, free): `GET /v1/text2image/soul-styles` and `/v1/text2image/soul-styles/v2` →
+  `[{id, name, description, preview_url}]`; `GET /models/higgsfield/genjutsu/restyle/v1.0/presets` →
+  `{model, items: [{id, name, preview_url}]}` (all at once, by name); `GET /marketing-studio/image/presets`
+  (`search`, `size` 1–100, `cursor` = offset) → `{total, cursor, items: [{id, type, name, cover_image,
+  metadata: {aspect_ratio, group_name}, format_slugs}]}`, `cursor` null on the last page.
 - Cancel: `POST /requests/{id}/cancel` (202, or 400 if already in progress).
   Delete: `DELETE /requests/{id}` (409 while queued/in_progress).
 - Limits are by concurrency; requests beyond the limit are queued, queue overflow → 429.

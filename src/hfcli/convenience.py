@@ -16,9 +16,11 @@ flag left out of the dict is never asked for) and calls `generate` with its kind
 
 A new flag is an entry in `hfcore.flags.FLAGS`, an `...Opt` alias here and an option on
 the commands that offer it. A flag that names something to look up (`--soul <name>`:
-`souls.toml` → `custom_reference_id`, checked against the SOUL Model; `--preset <name>`)
-is resolved between steps 2 and 3, once the Endpoint is known, by replacing the name in
-`flags` with the looked-up value; from there on it maps like any other flag.
+`souls.toml` → `custom_reference_id`, checked against the SOUL Model) is resolved between
+steps 2 and 3, once the Endpoint is known, by replacing the name in `flags` with the
+looked-up value; from there on it maps like any other flag. `--preset <name>` is resolved
+the same way between steps 3 and 4 (`_apply_preset`: the Preset lists of the Endpoint,
+fetched live, see `hfcore.presets`), so a Preset name typed at the prompt is looked up too.
 """
 
 from __future__ import annotations
