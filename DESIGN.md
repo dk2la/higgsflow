@@ -103,7 +103,11 @@ global because Soul IDs belong to the account and the API has no endpoint to lis
 **References:** any file in `references/` is a Reference, whether put there by hand or via
 `higgs ref save` (which copies the Generation together with its `.json`). A Reference name is unique
 regardless of extension (`hero.png` and `hero.mp4` cannot coexist); `ref save` to a taken name fails
-unless `--force`; an ambiguous `@name` fails and lists the matches.
+unless `--force` (which replaces the old Reference and its `.json`, whatever its extension); an ambiguous
+`@name` fails and lists the matches, an unknown one lists the Project's References (close matches first).
+The `.json` files and hidden files in `references/` are not References. A parameter value is a Reference
+when it is exactly `@name` with no whitespace; a value starting with `@@` is sent with one `@` removed
+(`@@hero` → the literal string `@hero`).
 
 **Final:** `higgs pick` copies the Generation together with its `.json` into `final/` under the same
 name, so a picked file stays self-contained (no symlinks).

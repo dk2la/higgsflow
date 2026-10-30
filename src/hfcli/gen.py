@@ -25,7 +25,8 @@ def gen(
             "-p",
             help=(
                 "A parameter as key=value; JSON values are parsed (5, true, [1,2]). "
-                "A local file path (inputs/a.jpg) is uploaded and replaced by its URL."
+                "A local file path (inputs/a.jpg) or Reference (@hero) is uploaded and replaced by its URL; "
+                "@@ sends a literal @."
             ),
         ),
     ] = None,
