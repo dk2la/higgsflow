@@ -8,14 +8,16 @@ accepts the submit, and later updated as the status changes. `save_request` and
 from __future__ import annotations
 
 import os
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from hfcore import naming
-from hfcore.errors import HiggsError
+from hfcore import config, naming
+from hfcore.catalog import Catalog, load_catalog
+from hfcore.errors import HiggsError, HiggsWarning
 from hfcore.inputs import Input
 from hfcore.naming import Naming
 from hfcore.projects import Project
@@ -95,11 +97,30 @@ def list_requests(project: Project) -> list[RequestRecord]:
 
 
 def new_naming(project: Project, endpoint: str, *, prompt: str | None, name: str | None) -> Naming:
-    """The naming of a new Request: `vNN` counts this slug across all the Project's Requests."""
-    model_slug, mode = naming.model_and_mode(endpoint)
+    """The naming of a new Request: `vNN` counts this slug across all the Project's Requests.
+
+    The model slug and Mode come from the effective catalog when it has the Endpoint, else
+    from the Endpoint id (`naming.model_and_mode`).
+    """
+    model_slug, mode = naming.model_and_mode(endpoint, _naming_catalog())
     slug = naming.request_slug(name, prompt)
     version = naming.next_version((record.naming for record in list_requests(project)), slug)
     return Naming(model_slug=model_slug, mode=mode, slug=slug, version=version)
+
+
+def _naming_catalog() -> Catalog | None:
+    """The effective catalog, for names only; None when it cannot be loaded.
+
+    Naming never fails or warns because of the catalog: a broken `models.local.toml` must
+    not block a raw `--no-validate` call (its name then comes from the Endpoint id), and
+    validation has already warned about an unreadable user catalog.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", HiggsWarning)
+        try:
+            return load_catalog(config.config_dir())
+        except HiggsError:
+            return None
 
 
 def load_request(project: Project, request_id: str) -> RequestRecord:

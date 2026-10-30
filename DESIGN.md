@@ -111,6 +111,16 @@ when it is exactly `@name` with no whitespace; a value starting with `@@` is sen
 
 **Final:** `higgs pick` copies the Generation together with its `.json` into `final/` under the same
 name, so a picked file stays self-contained (no symlinks).
+- `<generation>` is a path to a Generation file (relative or absolute) or a bare file name, looked up in
+  `generations/*/`. It must be in the Project's `generations/`; a file there without its `.json` is not a
+  Generation (e.g. an Artifact or a hand-made file) and fails with `generation_metadata_missing` rather than
+  landing in `final/` undocumented. All checks (metadata readable, every listed Artifact present) run before
+  anything is copied, so a failed pick leaves `final/` untouched.
+- The Generation, every Artifact its `.json` lists and the `.json` are real copies (not symlinks or hard
+  links): editing or deleting the originals never changes a Pick.
+- Picking again is an idempotent refresh: the files in `final/` are copied over again and the result says
+  `already_picked: true`.
+- The copying is `hfcore.generations.copy_generation(generation, folder)` (same names, reusable for any folder).
 
 **Current project:** like git, the CLI walks up from the current directory to the nearest
 `project.toml`; `--project <name>` overrides it. There is no global "active project".
@@ -118,7 +128,12 @@ Outside a project, project-scoped commands fail with a hint to run `higgs init` 
 
 **Generation naming:**
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN.<ext>`,
-e.g. `20261030-1412_kling-3-0_i2v_sunset-beach_v02.mp4`.
+e.g. `20261030-1412_kling-3-0-pro_i2v_sunset-beach_v02.mp4` (Kling 3.0 Pro, `kling-video/v3.0/pro/image-to-video`)
+or `20261030-1412_soul-v2_t2i_editorial-portrait_v01.png` (SOUL V2, no tiers).
+`<model-slug>` is the catalog's Model slug, slugified (`kling-3.0` → `kling-3-0`), followed by the
+Endpoint's quality tier when it has one (`-std`, `-pro`, `-4k`, `-fast`): tiers differ in price and
+quality, so two tiers of one idea must be told apart by name. `<mode>` is the Endpoint's Mode from the
+catalog.
 `<slug>` — from `--name` or from the first words of the prompt; `vNN` — the iteration number of
 this idea: a counter of Requests with the same `<slug>` across the whole project, regardless
 of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday with another model).
@@ -132,13 +147,17 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
   With several Generations the artifacts take the Request's name without `-N` and every Generation's
   `.json` lists them; a Request that returns artifacts only (e.g. a 3D scene) has them as its Generations.
 - The model slug, Mode, slug and `vNN` are fixed when the Request is submitted and stored in its record
-  (`naming`), so a later `sync`/`download` gives the same names. Timestamps are in local time.
-- For a raw `higgs gen` (no catalog) they come from the Endpoint id: the first path segment that names a
+  (`naming`), so a later `sync`/`download` gives the same names. Timestamps (and the `YYYY-MM-DD` folder)
+  are in local time: the container runs in UTC, so `bin/higgs` passes the host's time zone as `TZ=<IANA
+  name>` (host `$TZ`, else the `/etc/localtime` symlink — on macOS `/var/db/timezone/zoneinfo/Europe/Moscow`
+  → `Europe/Moscow` — else `/etc/timezone`, else `UTC`), and the image installs `tzdata` so the name resolves.
+- For an Endpoint the effective catalog does not have (a raw `higgs gen --no-validate` to a Model not in
+  the docs yet) they come from the Endpoint id: the first path segment that names a
   Mode is the Mode (`text-to-video` → `t2v`, `image-to-video`/`first-last-frame` → `i2v`,
   `reference-to-video`/`image-reference`/`video-reference` → `ref`, `edit`/`video-edit` → `edit`,
   `video-extend` → `extend`, `motion-control`/`motion-transfer` → `motion`, `text-to-image` → `t2i`;
   none → `gen`), and the remaining segments, slugified, are the model slug:
-  `kling-video/v3.0/pro/image-to-video` → `kling-video-v3-0-pro` + `i2v`. Without `--name` or a prompt
+  `kling-video/v4.0/pro/image-to-video` → `kling-video-v4-0-pro` + `i2v`. Without `--name` or a prompt
   the slug is `untitled`.
 
 ## 6. Model catalog
@@ -227,7 +246,7 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
 | `higgs sync` | download completed Requests |
 | `higgs download <request-id>` | re-download a Request's Generations (while the links are alive) |
 | `higgs cancel <request-id>` / `higgs delete <request-id>` | cancel (queued only; the record becomes `canceled`) / delete on the API side only (local files stay; the record gets `deleted_at`). Only Requests of the Project: an id without a local record fails with `request_not_found` before any API call |
-| `higgs pick <generation>` | copy to `final/` |
+| `higgs pick <generation>` | copy to `final/` with its `.json` and Artifacts (§5) |
 | `higgs ref save <generation> <name> [--force]` | save a generation as a reference |
 | `higgs soul train <name> <images...> [--version v1\|v2\|cinema]` | train a Soul ID from project images |
 | `higgs soul list` / `higgs soul status <name>` | registered Soul IDs / training status |

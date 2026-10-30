@@ -14,6 +14,9 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from hfcore.catalog import Catalog
+from hfcore.errors import HiggsError
+
 # Endpoint path segments that name a Mode, and the short form used in file names.
 MODE_SEGMENTS = {
     "text-to-video": "t2v",
@@ -46,7 +49,27 @@ class Naming(BaseModel):
     version: int
 
 
-def model_and_mode(endpoint: str) -> tuple[str, str]:
+def model_and_mode(endpoint: str, catalog: Catalog | None = None) -> tuple[str, str]:
+    """Model slug and Mode of an Endpoint id.
+
+    From the catalog when it has the Endpoint: the Model slug with its tier, if the
+    Endpoint has one, and the Endpoint's Mode (`kling-video/v3.0/pro/image-to-video` →
+    (`kling-3-0-pro`, `i2v`), `higgsfield-ai/soul/v2/standard` → (`soul-v2`, `t2i`)).
+    Otherwise (a raw `--no-validate` call to an Endpoint the catalog lacks) from the path,
+    see `path_model_and_mode`.
+    """
+    if catalog is not None:
+        try:
+            found = catalog.endpoint(endpoint)
+        except HiggsError as error:
+            if error.code != "unknown_endpoint":
+                raise
+        else:
+            return slugify("-".join(part for part in (found.model, found.tier) if part)), found.mode
+    return path_model_and_mode(endpoint)
+
+
+def path_model_and_mode(endpoint: str) -> tuple[str, str]:
     """Model slug and Mode of a raw Endpoint id, without the catalog.
 
     The first path segment that names a Mode (`image-to-video` → `i2v`, see

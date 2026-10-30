@@ -112,7 +112,7 @@ def test_list_shows_the_project_history_from_local_files_only(higgs, project, ap
     assert not respx_mock.calls
     listed = json.loads(result.output)["requests"]
     assert [item["request_id"] for item in listed] == [REQUEST_ID, OTHER_ID]
-    assert listed[1]["naming"] == {"model_slug": "kling-video-v3-0-pro", "mode": "i2v", "slug": "waves", "version": 1}
+    assert listed[1]["naming"] == {"model_slug": "kling-3-0-pro", "mode": "i2v", "slug": "waves", "version": 1}
     assert listed[0] == record_of(project, REQUEST_ID)
 
 
@@ -161,7 +161,7 @@ def test_sync_downloads_completed_requests_and_reports_the_running_ones(higgs, p
     result = higgs("sync", "--json")
 
     assert result.exit_code == 0, result.output
-    name = "20261030-1200_higgsfield-ai-soul-v2-standard_gen_sunset-beach_v01.jpg"
+    name = "20261030-1200_soul-v2_t2i_sunset-beach_v01.jpg"
     assert (project / DAY / name).read_bytes() == b"jpeg-1"
     assert json.loads((project / DAY / f"{name}.json").read_text())["request_id"] == REQUEST_ID
     record = record_of(project, REQUEST_ID)
@@ -264,7 +264,7 @@ def test_sync_goes_on_after_a_request_fails_to_download_and_exits_with_an_error(
     assert record_of(project, OTHER_ID)["downloaded_at"] is not None
 
 
-NAME = "20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-cat_v01.jpg"
+NAME = "20261030-1200_soul-v2_t2i_a-cat_v01.jpg"
 
 
 def synced_request(higgs, respx_mock) -> None:
@@ -379,10 +379,10 @@ def test_list_as_text_is_a_table_of_the_requests(higgs, project, api_key, respx_
     assert not respx_mock.calls
     lines = result.output.splitlines()
     [first] = [line for line in lines if "d7e6c0f3" in line]
-    for cell in ("2026-10-30 12:00", "gen", "a-cat v01", "completed", "deleted", "$0.35", "1"):
+    for cell in ("2026-10-30 12:00", "t2i", "a-cat v01", "completed", "deleted", "$0.35", "1"):
         assert cell in first, first
     [second] = [line for line in lines if "5a1b2c3d" in line]
-    for cell in ("2026-10-30 14:00", "kling-video-v3-0-pro", "i2v", "waves v01", "queued"):
+    for cell in ("2026-10-30 14:00", "kling-3-0-pro", "i2v", "waves v01", "queued"):
         assert cell in second, second
 
 

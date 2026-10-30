@@ -34,7 +34,7 @@ COMPLETED = {
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 MP4 = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 32
 
-GENERATION = "generations/2026-10-30/20261030-1200_higgsfield-ai-soul-v2-standard_gen_a-red-fox_v01.png"
+GENERATION = "generations/2026-10-30/20261030-1200_soul-v2_t2i_a-red-fox_v01.png"
 
 
 def make_generation(higgs, respx_mock: respx.MockRouter) -> str:

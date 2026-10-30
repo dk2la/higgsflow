@@ -40,6 +40,24 @@ for var in HF_KEY HF_API_KEY HF_API_SECRET; do
   [ -n "${!var:-}" ] && env_flags+=(-e "$var")
 done
 
+# The host's time zone as an IANA name, so Generation names use local time (the container
+# runs in UTC): $TZ, else the /etc/localtime symlink (macOS:
+# /var/db/timezone/zoneinfo/Europe/Moscow), else /etc/timezone (Debian), else UTC.
+host_tz="${TZ:-}"
+host_tz="${host_tz#:}"
+if [ -z "$host_tz" ] && [ -L /etc/localtime ]; then
+  host_tz="$(readlink /etc/localtime)"
+  case "$host_tz" in
+    */zoneinfo/*) host_tz="${host_tz##*/zoneinfo/}" ;;
+    *) host_tz="" ;;
+  esac
+fi
+if [ -z "$host_tz" ] && [ -r /etc/timezone ]; then
+  host_tz="$(head -n1 /etc/timezone)"
+fi
+[[ "$host_tz" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] || host_tz="UTC"
+env_flags+=(-e "TZ=$host_tz")
+
 exec "${HIGGS_DOCKER[@]}" run --rm "${tty_flags[@]}" \
   --user "$(id -u):$(id -g)" \
   -e HOME="$HOME" \
