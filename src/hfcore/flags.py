@@ -64,7 +64,8 @@ def map_flags(endpoint: Endpoint, flags: dict[str, Any]) -> dict[str, Any]:
     """The Endpoint parameters for the given flags (`{"aspect": "16:9"}` → `{"aspect_ratio": "16:9"}`).
 
     Flags whose value is None are skipped. Raises `unsupported_flag` for a flag the
-    Endpoint has no parameter for.
+    Endpoint has no parameter for, and `too_many_values` for a repeatable flag given
+    several times whose parameter takes one value (`--image` twice on Ideogram's `image_url`).
     """
     params: dict[str, Any] = {}
     for key, value in flags.items():
@@ -73,6 +74,12 @@ def map_flags(endpoint: Endpoint, flags: dict[str, Any]) -> dict[str, Any]:
         parameter = flag_parameter(endpoint, key, value)
         if parameter is None:
             raise unsupported(endpoint, key)
+        if isinstance(value, list) and parameter.type != "array" and len(value) > 1:
+            raise HiggsError(
+                f"{FLAGS[key].option} takes one value on {endpoint.model} {endpoint.mode}, got {len(value)}",
+                hint=f"Its {parameter.name} is a single value; pass {FLAGS[key].option} once.",
+                code="too_many_values",
+            )
         params[parameter.name] = convert(parameter, value)
     return params
 

@@ -127,6 +127,31 @@ def test_image_maps_the_input_images_per_model(
     assert [item["source"] for item in record["inputs"]] == values
 
 
+def test_several_images_on_a_model_that_takes_one_fail_before_any_call(higgs, project, api_key, respx_mock, images):
+    result = image(
+        higgs, "t2i", "--model", "ideogram-4.0", "--prompt", "In this style",
+        "--image", "inputs/a.jpg", "--image", "inputs/b.png", "--json", "--yes",
+    )
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "too_many_values"
+    assert error["message"] == "--image takes one value on ideogram-4.0 t2i, got 2"
+    assert not respx_mock.calls
+
+
+def test_image_is_not_supported_by_a_model_without_input_images(higgs, project, api_key, respx_mock, images):
+    result = image(
+        higgs, "t2i", "--model", "z-image-turbo", "--prompt", "In this style", "--image", "inputs/a.jpg", "--json", "--yes"
+    )
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "unsupported_flag"
+    assert error["message"] == "--image is not supported by z-image-turbo t2i"
+    assert not respx_mock.calls
+
+
 # (model, endpoint, --quality, expected body): each Model names its quality its own way.
 QUALITY_MAPPINGS = [
     ("grok-image-2.0", "xai/grok-imagine-image-2.0", "medium", {"quality": "medium"}),
