@@ -17,6 +17,7 @@ from hfcli import (
     image,
     models,
     pick,
+    presets,
     projects,
     references,
     request_actions,
@@ -97,6 +98,7 @@ app.add_typer(models.app)
 app.add_typer(references.app)
 app.add_typer(video.app)
 app.add_typer(image.app)
+app.add_typer(presets.app)
 app.add_typer(souls.app)
 
 

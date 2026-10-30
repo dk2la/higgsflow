@@ -239,6 +239,14 @@ class ApiClient:
         """The undocumented `GET /models`, as raw JSON: its format is unknown, so callers must tolerate anything."""
         return _json(self._call("GET", "/models"))
 
+    def list_presets(self, path: str, params: dict[str, str | int] | None = None) -> Any:
+        """One page of a Preset catalog (`GET <path>`, e.g. `/v1/text2image/soul-styles`), as raw JSON.
+
+        The catalogs differ in shape (a bare list, `{"items"}`, a paginated `{"items", "cursor"}`),
+        so `hfcore.presets` reads them.
+        """
+        return _json(self._call("GET", path, params=params))
+
     def usage(self, start: datetime, end: datetime, *, timeframe: str = "day") -> Any:
         """Usage analytics of the account (`GET /models/usage`), as raw JSON.
 

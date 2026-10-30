@@ -344,7 +344,7 @@ def test_an_unsupported_flag_lists_the_flags_of_the_model_once(higgs, project, a
     assert result.exit_code == 1
     error = json.loads(result.output)["error"]
     assert error["message"] == "--seed is not supported by ideogram-4.0 t2i"
-    assert error["hint"].startswith("Its flags: --prompt, --image, --aspect, --quality; ")
+    assert error["hint"].startswith("Its flags: --prompt, --image, --quality, --aspect; ")
 
 
 # (model, endpoint, --quality, expected body): each Model names its quality its own way.
