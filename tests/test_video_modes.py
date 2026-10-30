@@ -287,6 +287,20 @@ def test_references_and_inputs_mix_in_ref_and_are_recorded(higgs, project, api_k
     ]
 
 
+def test_an_unsupported_flag_hints_at_the_flags_of_the_command(higgs, project, api_key, respx_mock, media):
+    # Seedance 2.0 ref has no start frame; its images are references.
+    result = video(
+        higgs, "ref", "--model", "seedance-2.0", "--image", "inputs/hero.jpg", "--prompt", "Hero", "--json", "--yes"
+    )
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "unsupported_flag"
+    assert error["message"] == "--image is not supported by seedance-2.0 ref"
+    assert error["hint"].startswith("Its flags: --prompt, --ref, --video, --audio, --quality, --duration, --aspect;")
+    assert not respx_mock.calls
+
+
 def test_a_prompt_token_without_its_reference_fails_before_any_upload(higgs, project, api_key, respx_mock, media):
     # Cinema Studio 4.0 refers to its references as <<<image_N>>>: two --ref, no third image.
     result = video(

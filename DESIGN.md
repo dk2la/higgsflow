@@ -244,7 +244,7 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
 | `higgs models show <model>` | parameters, allowed quality/duration/aspect, prompt constraints |
 | `higgs models sync` | update the catalog |
 | `higgs video t2v\|i2v\|ref\|vref\|edit\|extend\|motion\|restyle ...` | convenience layer for video (one subcommand per Mode) |
-| `higgs image ...` | convenience layer for images |
+| `higgs image t2i\|i2i ...` | convenience layer for images (one subcommand per Mode; Ads Studio only via `higgs gen`) |
 | `higgs gen <endpoint-id> -p k=v ... [--no-validate]` | generic call to any endpoint |
 | `higgs status [<request-id>]` / `higgs list [filters]` | Request status / project history |
 | `higgs sync` | download completed Requests |
@@ -266,8 +266,8 @@ parameters (`resolution` / `mode=std|pro|4k`, etc.).
 How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcli.video`):
 
 - **One subcommand per Mode code.** `higgs video t2v|i2v|ref|vref|edit|extend|motion|restyle` (each Mode
-  code of §6 is its own subcommand, so `vref` and `restyle` are not folded into other commands), and #18 adds
-  `higgs image t2i|i2i`. A subcommand only declares the options that make sense for its Mode and calls
+  code of §6 is its own subcommand, so `vref` and `restyle` are not folded into other commands; #17), and
+  `higgs image t2i|i2i` (#18). A subcommand only declares the options that make sense for its Mode and calls
   `hfcli.convenience.generate(kind=..., mode=..., flags=...)`.
 - **Inputs.** `--video` → `video_url`, else `video_urls` (a list of one); `--audio` → `audio_url`, else
   `audio_urls`; `--ref` (repeatable) → `image_urls`, in the order given, so the n-th `--ref` is `<<<image_n>>>`.
@@ -296,6 +296,23 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   without it distinct random seeds in the parameter's range. All N go through one `hfcli.pipeline.run_requests`
   (shared with `higgs gen`): validate all → upload → estimate all → one confirmation → submit all → wait for
   and download all. `--json` of a convenience command is always a list with one object per Request.
+- **Images (#18; `hfcli.image`).** `higgs image t2i` reaches the 14 `t2i` Endpoints (also the Models that take
+  optional reference images), `higgs image i2i` Qwen Image 3 edit; Ads Studio (`ads`) stays `higgs gen`-only,
+  so `higgs image t2i -m ads-studio` is `unknown_mode`. Both take `--model`, `--prompt`/`--prompt-file`,
+  `--image` (repeatable), `--aspect`, `--quality`, `--seed` and the shared options; `[defaults.image]` beats
+  `[defaults]`. `--image` is its own flag key (`images`, separate from video's start frame `image`):
+  `image_urls` (a list: Grok, Marketing Studio, Qwen edit), else `image_url` (Ideogram) or
+  `image_reference_url` (SOUL) — a single-image parameter given `--image` twice is `too_many_values`.
+  `--quality` maps through `resolution` (`1k`/`2k`/`4k`, `720p`/`1080p`), `quality` (`low`…`max`) or Ideogram's
+  `rendering_speed` (`turbo`/`default`/`quality`), whichever's `enum` accepts the value; Grok and Marketing
+  Studio have both `quality` and `resolution`, so the other one goes in `-p`. `MODE_REQUIRED` has t2i: prompt;
+  i2i's `image_urls` and prompt are required by its schema. A Model's own `batch_size` (SOUL: 1 or 4) is `-p`:
+  one Request with several Generations `..._v01-1.png` … `-4` (§5); with `--count 2` that is `v01-1..4`,
+  `v02-1..4` from one price confirmation.
+- **Hook points for `--soul` (#21) and `--preset` (#22).** Each is a `Flag` in `FLAGS` (`--soul` →
+  `custom_reference_id`) plus an option on `t2i`/`i2i` that goes into the `flags` dict; `generate` swaps the
+  name for the looked-up value right after the Endpoint is resolved (so the SOUL version can be checked) and
+  before defaults and mapping, after which it maps like any other flag.
 
 - `--soul <name>` resolves the name via `souls.toml` and checks that the Soul ID version matches the SOUL model.
 - Soul ID training is not a Request: it is account-scoped, is not written to the project's `.hf/` and
