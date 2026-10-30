@@ -39,6 +39,8 @@ higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch
   --no-validate                  # submits a Request, waits for it and downloads the Generations
 higgs gen bytedance/seedance-2.0/text-to-video -p prompt="Waves at dusk" --name sunset-beach \
   --no-validate --no-wait        # only submits; the record lands in .hf/requests/<request_id>.json
+higgs pick generations/2026-10-30/<file>.png
+                                 # copies the Generation, its .json and Artifacts into final/
 ```
 
 Without `--no-wait`, `higgs gen` polls the Request (2 s backing off to 10 s, waiting out a full queue and
@@ -47,6 +49,11 @@ retrying transient errors) and downloads every Generation and Artifact into `gen
 made. `<slug>` is `--name` or the first words of the prompt; `vNN` counts the Project's Requests with that
 slug. For a raw `gen` the model slug and Mode come from the Endpoint id (see DESIGN.md §5). A failed, nsfw
 or canceled Request ends with an error and downloads nothing.
+
+`higgs pick <generation>` takes a path or just the file name (looked up under `generations/`) and copies
+the Generation with its `.json` and all its Artifacts into `final/` under the same names, as real copies
+(no symlinks). Picking the same Generation again refreshes the copies; a file without its `.json` is not a
+Generation and is refused.
 
 The key can also come from `HF_KEY="id:secret"` or `HF_API_KEY` + `HF_API_SECRET`, which take precedence
 over the saved file. Project-scoped commands find the Project by walking up from the current directory to

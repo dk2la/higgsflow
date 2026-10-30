@@ -107,6 +107,16 @@ unless `--force`; an ambiguous `@name` fails and lists the matches.
 
 **Final:** `higgs pick` copies the Generation together with its `.json` into `final/` under the same
 name, so a picked file stays self-contained (no symlinks).
+- `<generation>` is a path to a Generation file (relative or absolute) or a bare file name, looked up in
+  `generations/*/`. It must be in the Project's `generations/`; a file there without its `.json` is not a
+  Generation (e.g. an Artifact or a hand-made file) and fails with `generation_metadata_missing` rather than
+  landing in `final/` undocumented. All checks (metadata readable, every listed Artifact present) run before
+  anything is copied, so a failed pick leaves `final/` untouched.
+- The Generation, every Artifact its `.json` lists and the `.json` are real copies (not symlinks or hard
+  links): editing or deleting the originals never changes a Pick.
+- Picking again is an idempotent refresh: the files in `final/` are copied over again and the result says
+  `already_picked: true`.
+- The copying is `hfcore.generations.copy_generation(generation, folder)`, shared with `ref save`.
 
 **Current project:** like git, the CLI walks up from the current directory to the nearest
 `project.toml`; `--project <name>` overrides it. There is no global "active project".
@@ -201,7 +211,7 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
 | `higgs sync` | download completed Requests |
 | `higgs download <request-id>` | re-download a Request's Generations (while the links are alive) |
 | `higgs cancel <request-id>` / `higgs delete <request-id>` | cancel (queued only; the record becomes `canceled`) / delete on the API side only (local files stay; the record gets `deleted_at`). Only Requests of the Project: an id without a local record fails with `request_not_found` before any API call |
-| `higgs pick <generation>` | copy to `final/` |
+| `higgs pick <generation>` | copy to `final/` with its `.json` and Artifacts (§5) |
 | `higgs ref save <generation> <name> [--force]` | save a generation as a reference |
 | `higgs soul train <name> <images...> [--version v1\|v2\|cinema]` | train a Soul ID from project images |
 | `higgs soul list` / `higgs soul status <name>` | registered Soul IDs / training status |
