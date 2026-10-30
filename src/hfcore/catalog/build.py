@@ -278,14 +278,14 @@ def _model_name(endpoint_id: str, group_title: str) -> str:
     return group_title
 
 
-def _family_name(model_name: str) -> str:
+def family_of(model_name: str) -> str:
     for family in MULTI_WORD_FAMILIES:
         if model_name.startswith(family):
             return family
     return re.sub(r"-\d.*$", "", model_name.split()[0])
 
 
-def _mode(endpoint_id: str, kind: str) -> str:
+def mode_of(endpoint_id: str, kind: str) -> str:
     if endpoint_id in MODE_OVERRIDES:
         return MODE_OVERRIDES[endpoint_id]
     segments = endpoint_id.split("/")
@@ -322,7 +322,7 @@ def build_catalog(docs: str, pricing: dict[str, Any] | None = None) -> Catalog:
         group_title, group_slug = back.groups()
         kind = kinds[group_slug]
         model_name = _model_name(endpoint_id, group_title)
-        family_name = _family_name(model_name)
+        family_name = family_of(model_name)
         family_id, slug = model_slug(family_name), model_slug(model_name)
         family = families.setdefault(family_id, Family(id=family_id, name=family_name))
         model = models.setdefault(slug, Model(slug=slug, name=model_name, family=family.id, kind=kind))
@@ -336,7 +336,7 @@ def build_catalog(docs: str, pricing: dict[str, Any] | None = None) -> Catalog:
                 kind=kind,
                 family=family.id,
                 model=model.slug,
-                mode=_mode(endpoint_id, kind),
+                mode=mode_of(endpoint_id, kind),
                 tier=_tier_segment(endpoint_id),
                 doc_url=page.source,
                 parameters=parameters,
@@ -346,6 +346,8 @@ def build_catalog(docs: str, pricing: dict[str, Any] | None = None) -> Catalog:
                 input_schema=schema,
             )
         )
+    if not endpoints:
+        raise CatalogBuildError("The docs contain no generation Endpoints (no `**Endpoint ID:**` pages).")
     # A tier only distinguishes Endpoints when its Model has more than one.
     for slug in models:
         tiers = {e.tier for e in endpoints if e.model == slug}

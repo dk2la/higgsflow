@@ -13,12 +13,11 @@ from decimal import Decimal
 from typing import Any
 
 import typer
-from rich.markup import escape
 
 from hfcore import spend
 from hfcore.errors import HiggsError
 from hfcore.projects import Project
-from hfcli.output import err_console, json_mode, no_input
+from hfcli.output import err_console, json_mode, no_input, render_warning
 
 
 class ConfirmationRequired(HiggsError):
@@ -50,7 +49,7 @@ def confirm_price(ctx: typer.Context, project: Project, prices: Sequence[Decimal
     check = spend.check_price(project, prices)
     if not json_mode(ctx):
         for warning in check.warnings:
-            err_console.print(f"[bold yellow]Warning:[/] {escape(warning.message)}", highlight=False)
+            render_warning(warning.message)
     if yes:
         if not json_mode(ctx):
             err_console.print(f"Price: ${check.total_usd}", highlight=False)

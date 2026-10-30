@@ -7,9 +7,10 @@ from typing import Annotated
 
 import typer
 
-from hfcore import credentials, downloads, inputs, lifecycle, requests
+from hfcore import credentials, downloads, inputs, lifecycle, requests, validation
 from hfcore.api import ApiClient
-from hfcore.errors import HiggsError
+from hfcore.catalog import load_catalog
+from hfcore.config import config_dir
 from hfcli.output import JsonOpt, NoInputOpt, YesOpt, print_json, waiting_status
 from hfcli.params import parse_params
 from hfcli.price import confirm_price
@@ -41,16 +42,10 @@ def gen(
     as_json: JsonOpt = False,
 ) -> None:
     """Submit a Request to any Endpoint."""
-    # Until the catalog (#14) exists, validation must be skipped explicitly, so adding
-    # it later never silently changes what an existing command does.
-    if not no_validate:
-        raise HiggsError(
-            "Validation against the catalog is not implemented yet",
-            hint="Pass --no-validate to submit the parameters as they are.",
-            code="not_implemented",
-        )
     params = parse_params(param or [])
     target = current_project(project)
+    if not no_validate:
+        validation.validate_request(load_catalog(config_dir()), endpoint, params, cwd=Path.cwd())
     with ApiClient(credentials.load_credentials()) as client:
         resolved = inputs.resolve_inputs(client, target, params, cwd=Path.cwd())
         price = client.estimate(endpoint, resolved.params).usd
