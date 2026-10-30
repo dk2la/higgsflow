@@ -244,6 +244,55 @@ def test_without_input_a_missing_parameter_fails_at_once(higgs, project, api_key
     assert not respx_mock.calls
 
 
+def write_defaults(project, defaults: str) -> None:
+    (project / "project.toml").write_text(f'name = "demo"\n\n{defaults}\n')
+
+
+def test_project_defaults_fill_the_flags_that_were_not_given(higgs, project, api_key, respx_mock, estimate):
+    write_defaults(project, '[defaults]\nmodel = "kling-3.0"\nquality = "pro"\naspect = "9:16"\nduration = 10\n')
+    route = mock_submit(respx_mock, "kling-video/v3.0/pro/text-to-video")
+
+    result = video(higgs, "t2v", "--prompt", "Waves at dusk", "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Waves at dusk", "duration": 10, "aspect_ratio": "9:16"}
+
+
+def test_flags_beat_project_defaults(higgs, project, api_key, respx_mock, estimate):
+    write_defaults(project, '[defaults]\nmodel = "kling-3.0"\nquality = "pro"\naspect = "9:16"\nduration = 10\n')
+    route = mock_submit(respx_mock, "kling-video/v3.0/4k/text-to-video")
+
+    result = video(higgs, "t2v", "--prompt", "Waves", "-q", "4k", "--aspect", "1:1", "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Waves", "duration": 10, "aspect_ratio": "1:1"}
+
+
+def test_defaults_that_do_not_fit_the_endpoint_are_left_out(higgs, project, api_key, respx_mock, estimate):
+    # Hailuo 2.3 has no aspect ratio or quality parameter, and lasts 6 or 10 seconds.
+    write_defaults(project, '[defaults]\nquality = "pro"\naspect = "16:9"\nduration = 5\n')
+    route = mock_submit(respx_mock, "minimax/hailuo-2.3/standard/text-to-video")
+
+    result = video(higgs, "t2v", "--model", "hailuo-2.3", "--prompt", "Waves", "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Waves"}
+
+
+def test_video_defaults_beat_the_shared_ones(higgs, project, api_key, respx_mock, estimate):
+    # A shared default Model without the Mode (an image Model) does not count.
+    write_defaults(project, '[defaults]\nmodel = "soul-v2"\naspect = "9:16"\n\n[defaults.video]\nmodel = "seedance-2.0"\n')
+    route = mock_submit(respx_mock, "bytedance/seedance-2.0/text-to-video")
+
+    result = video(higgs, "t2v", "--prompt", "Waves", "--no-wait", "--json", "--yes")
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Waves", "aspect_ratio": "9:16"}
+
+    write_defaults(project, '[defaults]\nmodel = "soul-v2"\n')
+    result = video(higgs, "t2v", "--prompt", "Waves", "--no-wait", "--json", "--yes")
+    assert json.loads(result.output)["error"]["code"] == "missing_param"
+
+
 def test_a_flag_the_endpoint_has_no_parameter_for_fails_before_any_call(higgs, project, api_key, respx_mock, images):
     result = video(
         higgs, "i2v", "--model", "kling-2.6", "--prompt", "She turns around",

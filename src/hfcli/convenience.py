@@ -16,6 +16,7 @@ import typer
 from hfcore import flags as common_flags
 from hfcore.catalog import Catalog, Endpoint, load_catalog
 from hfcore.config import config_dir
+from hfcore.projects import load_config
 from hfcli.output import ask, print_json
 from hfcli.params import parse_params
 from hfcli.pipeline import echo_result, result_json, run_requests
@@ -48,6 +49,7 @@ NoWaitOpt = Annotated[bool, typer.Option("--no-wait", help="Return the request i
 def generate(
     ctx: typer.Context,
     *,
+    kind: str,
     mode: str,
     model: str | None,
     flags: dict[str, Any],
@@ -61,7 +63,9 @@ def generate(
     """Resolve the Endpoint, build the body from the flags and submit it; print the Requests."""
     target = current_project(project)
     extra = parse_params(params or [])
-    endpoint, flags = _endpoint(ctx, load_catalog(config_dir()), mode, model, flags)
+    defaults = common_flags.project_defaults(load_config(target).defaults, kind)
+    endpoint, flags = _endpoint(ctx, load_catalog(config_dir()), mode, model, flags, defaults)
+    flags = common_flags.fill_defaults(endpoint, flags, defaults)
     for key in common_flags.missing_flags(endpoint, flags, extra):
         flag = common_flags.FLAGS[key]
         options = common_flags.choices(endpoint, key)
@@ -79,13 +83,22 @@ def generate(
 
 
 def _endpoint(
-    ctx: typer.Context, catalog: Catalog, mode: str, model: str | None, flags: dict[str, Any]
+    ctx: typer.Context,
+    catalog: Catalog,
+    mode: str,
+    model: str | None,
+    flags: dict[str, Any],
+    defaults: dict[str, Any],
 ) -> tuple[Endpoint, dict[str, Any]]:
-    """The Endpoint for the Model (asked for when missing) and Mode, and the flags left to map.
+    """The Endpoint for the Model and Mode, and the flags left to map.
 
-    For a Model with quality tiers in the Mode, `--quality` (asked for when missing) is the
-    tier, so it is taken out of the flags.
+    The Model is `--model`, else the Project's default Model if it has the Mode, else asked
+    for. For a Model with quality tiers in the Mode, `--quality` (else the default quality
+    if it is one of the tiers, else asked for) is the tier, so it is taken out of the flags.
     """
+    default_model = defaults.get("model")
+    if model is None and isinstance(default_model, str) and mode in catalog.modes(default_model):
+        model = default_model
     if model is None:
         offered = [summary.slug for summary in catalog.summaries(mode=mode)]
         model = ask(ctx, f"Model for {mode}", flag="--model", choices=offered)
@@ -95,6 +108,9 @@ def _endpoint(
     if not tiers:
         return catalog.resolve(slug, mode), flags
     tier = flags.pop("quality", None)
+    default_tier = str(defaults.get("quality", "")).lower()
+    if tier is None and default_tier in tiers:
+        tier = default_tier
     if tier is None:
         tier = ask(ctx, f"Quality tier of {slug} {mode}", flag="--quality", choices=tiers)
     return catalog.resolve(slug, mode, tier.lower()), flags

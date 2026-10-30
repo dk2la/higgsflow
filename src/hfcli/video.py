@@ -42,6 +42,7 @@ def t2v(
     """Text to video."""
     generate(
         ctx,
+        kind="video",
         mode="t2v",
         model=model,
         flags={"prompt": prompt, "quality": quality, "duration": duration, "aspect": aspect},
@@ -75,6 +76,7 @@ def i2v(
     """Image to video: animate --image (optionally towards --end-image)."""
     generate(
         ctx,
+        kind="video",
         mode="i2v",
         model=model,
         flags={

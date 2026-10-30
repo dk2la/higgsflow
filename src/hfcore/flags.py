@@ -50,6 +50,10 @@ FLAGS: dict[str, Flag] = {
 # optional prompt, but a text-to-video Request without one makes no sense).
 MODE_REQUIRED: dict[str, tuple[str, ...]] = {"t2v": ("prompt",), "i2v": ("image",)}
 
+# The keys of `project.toml` `[defaults]` (and `[defaults.video]`, `[defaults.image]`) that
+# fill flags that were not given; `model` is the `--model` default.
+DEFAULT_KEYS = ("model", "quality", "duration", "aspect")
+
 
 def map_flags(endpoint: Endpoint, flags: dict[str, Any]) -> dict[str, Any]:
     """The Endpoint parameters for the given flags (`{"aspect": "16:9"}` → `{"aspect_ratio": "16:9"}`).
@@ -94,9 +98,41 @@ def choices(endpoint: Endpoint, key: str) -> list[str] | None:
     return [str(value) for value in parameter.enum]
 
 
+def project_defaults(defaults: dict[str, Any], kind: str) -> dict[str, Any]:
+    """The `DEFAULT_KEYS` of `project.toml` `[defaults]`, with `[defaults.<kind>]` (`video`, `image`) on top."""
+    found = {key: value for key, value in defaults.items() if key in DEFAULT_KEYS}
+    own = defaults.get(kind)
+    if isinstance(own, dict):
+        found.update({key: value for key, value in own.items() if key in DEFAULT_KEYS})
+    return found
+
+
+def fill_defaults(endpoint: Endpoint, flags: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
+    """`flags` with each one that is None set to its default, where the Endpoint accepts that default.
+
+    Defaults are Project-wide, so one the Endpoint has no parameter for, or whose parameter
+    does not allow it (`duration = 5` for a Model of 6 or 10 seconds), is left out.
+    """
+    filled = dict(flags)
+    for key, value in defaults.items():
+        if key in filled and filled[key] is None and accepts(endpoint, key, value):
+            filled[key] = value
+    return filled
+
+
+def accepts(endpoint: Endpoint, key: str, value: Any) -> bool:
+    """Whether some parameter carrying flag `key` takes `value` (any value, when it lists none)."""
+    return any(parameter.enum is None or _enum_match(parameter, value) is not None for parameter in _present(endpoint, key))
+
+
+def _present(endpoint: Endpoint, key: str) -> list[Parameter]:
+    """The Endpoint's parameters that may carry flag `key`, in the flag's order."""
+    return [parameter for name in FLAGS[key].params for parameter in endpoint.parameters if parameter.name == name]
+
+
 def flag_parameter(endpoint: Endpoint, key: str, value: Any = None) -> Parameter | None:
     """The Endpoint parameter that carries flag `key` (for `value`, when given), or None."""
-    present = [parameter for name in FLAGS[key].params for parameter in endpoint.parameters if parameter.name == name]
+    present = _present(endpoint, key)
     if value is not None:
         for parameter in present:
             if parameter.enum is None or _enum_match(parameter, value) is not None:
