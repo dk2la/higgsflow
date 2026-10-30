@@ -47,10 +47,13 @@ def submit(
     higgs, respx_mock, request_id: str = REQUEST_ID, *, endpoint: str = ENDPOINT, prompt: str = "a cat"
 ) -> None:
     """Submit a Request with `--no-wait`, so its record exists in the Project; then forget the calls."""
+    respx_mock.post(f"https://api.higgsfield.ai/estimate/{endpoint}").mock(
+        return_value=httpx.Response(200, json={"usd": "0.094"})
+    )
     respx_mock.post(f"https://api.higgsfield.ai/{endpoint}").mock(
         return_value=httpx.Response(200, json=submitted(request_id))
     )
-    result = higgs("gen", endpoint, "-p", f"prompt={prompt}", "--no-validate", "--no-wait", "--json")
+    result = higgs("gen", endpoint, "-p", f"prompt={prompt}", "--no-validate", "--no-wait", "--json", "--yes")
     assert result.exit_code == 0, result.output
     respx_mock.reset()
 
