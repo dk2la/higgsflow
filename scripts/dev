@@ -9,7 +9,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bin/lib.sh"
 
 repo="$(higgs_repo_dir)"
-image="$(higgs_ensure_image)"
+image="$(higgs_ensure_image dev)"
 
 tty_flags=(-i)
 [ -t 0 ] && [ -t 1 ] && tty_flags=(-it)
