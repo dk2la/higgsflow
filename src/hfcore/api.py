@@ -49,6 +49,18 @@ class UploadTarget(ApiModel):
     upload_headers: dict[str, str] = {}
 
 
+class Deleted(ApiModel):
+    """The response of `DELETE /requests/{id}`."""
+
+    request_id: str
+    status: str = "deleted"
+
+
+_CANCEL_HINT = "Only a queued Request can be canceled; once it finishes, `higgs delete` removes its data."
+_DELETE_HINT = "Wait until it finishes, or stop a queued one with `higgs cancel` first."
+_NOT_FOUND_HINT = "It does not exist or belongs to another account; check the key in use."
+
+
 class ApiClient:
     """Talks to the Higgsfield API with one key. Use as a context manager."""
 
@@ -99,6 +111,49 @@ class ApiClient:
                 hint="Try again; a new upload URL is requested every time.",
                 code="upload_failed",
             )
+
+    def cancel(self, request_id: str) -> None:
+        """Cancel a queued Request (`POST /requests/{id}/cancel`; 202 with an empty body)."""
+        self._call_on_request(
+            "POST",
+            request_id,
+            "/cancel",
+            # 400: processing has started.
+            {400: ("cannot_cancel", "is already in progress and cannot be canceled", _CANCEL_HINT)},
+        )
+
+    def delete(self, request_id: str) -> Deleted:
+        """Delete a finished Request's data on the API side (`DELETE /requests/{id}`)."""
+        response = self._call_on_request(
+            "DELETE",
+            request_id,
+            "",
+            {409: ("request_active", "is still queued or in progress and cannot be deleted yet", _DELETE_HINT)},
+        )
+        return _parse(Deleted, response)
+
+    def _call_on_request(
+        self, method: str, request_id: str, suffix: str, errors: dict[int, tuple[str, str, str]]
+    ) -> httpx.Response:
+        """A call on one Request (`/requests/{id}{suffix}`).
+
+        A 404 and the action's own statuses in `errors` (status → code, problem, hint)
+        become Request-specific errors instead of the generic mapping in `api_error`.
+        """
+        errors = {404: ("api_request_not_found", "is unknown to the API", _NOT_FOUND_HINT), **errors}
+        try:
+            return self._call(method, f"/requests/{request_id}{suffix}")
+        except ApiError as error:
+            if error.status not in errors:
+                raise
+            code, problem, hint = errors[error.status]
+            raise ApiError(
+                f"Request {request_id} {problem}",
+                status=error.status,
+                correlation_id=error.correlation_id,
+                hint=hint,
+                code=code,
+            ) from None
 
     def _call(
         self,

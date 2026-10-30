@@ -59,10 +59,14 @@ A specific version within a Family, such as Kling 3.0 or Kling 3.0 Turbo.
 _Avoid_: endpoint, family
 
 **Mode**:
-The kind of operation a Request performs: text-to-video, image-to-video, reference-to-video, edit, extend or motion.
+The kind of operation a Request performs, such as text-to-video, image-to-video, reference-to-video, edit, extend, motion or text-to-image (codes in DESIGN.md §6).
 _Avoid_: type, task
 
-A Model and a Mode together identify exactly one Endpoint.
+**Quality tier**:
+A quality variant of a Model in one Mode that the API exposes as a separate path, such as Kling 3.0 Standard, Pro and 4K.
+_Avoid_: variant, version
+
+A Model and a Mode together identify exactly one Endpoint; for a Model with quality tiers in that Mode, Model, Mode and tier do.
 
 **Preset**:
 A named, ready-made style or setup from a Higgsfield catalog (Soul styles, Genjutsu Restyle, Marketing Studio) applied to a Request.

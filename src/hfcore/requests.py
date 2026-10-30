@@ -50,6 +50,8 @@ class RequestRecord(BaseModel):
     # Exact price from `POST /estimate/{endpoint}`, as the decimal string the API returns.
     estimate_usd: str | None = None
     error: str | None = None
+    # When `higgs delete` removed the Request's data on the API side (local files stay).
+    deleted_at: datetime | None = None
     # `X-Correlation-ID` of the submit response, for support.
     correlation_id: str | None = None
 
