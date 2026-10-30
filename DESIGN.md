@@ -327,6 +327,10 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 - Limits are by concurrency; requests beyond the limit are queued, queue overflow → 429.
 - Billing in USD (separate from higgsfield.ai subscription credits), video — per second of output.
   There is no balance endpoint (Console only). There is no generation history endpoint.
+- Usage analytics: `GET /models/usage?start&end&timeframe` (range at most 31 days, buckets `hour`/`day`/`week`/`month`,
+  `limit` up to 100 buckets) → `{time_series: [{bucket, results: [{model, unit, quantity, unit_price, cost, currency}]}],
+  total, page, limit}`; completed generations only, not a billing record. `higgs usage` asks for the last 30 UTC
+  days by day and sums per Endpoint; in a Project a failing call is only a warning next to the local Spend.
 - Errors: 401 invalid key; 403 `api_key_expired`/`api_key_disabled`/insufficient funds;
   404/423/503 — model unavailable; 422 — idempotency conflict.
 - Allowed upload types: jpeg/png/webp/gif, wav, mp4.

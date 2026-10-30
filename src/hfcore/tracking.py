@@ -7,7 +7,7 @@ downloading goes through `hfcore.downloads.download_request`, as `gen` does.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Any
 
@@ -15,10 +15,11 @@ from pydantic import BaseModel
 
 from hfcore import clock, lifecycle
 from hfcore.api import ApiClient, RequestStatus
+from hfcore.catalog import Catalog
 from hfcore.downloads import DownloadedGeneration, download_request
 from hfcore.errors import HiggsError
 from hfcore.projects import Project
-from hfcore.requests import RequestRecord, list_requests
+from hfcore.requests import RequestRecord, list_requests, quiet_catalog, request_model
 
 # `--status pending` stands for every status that is not terminal yet.
 PENDING = "pending"
@@ -35,19 +36,19 @@ def find_requests(
 ) -> list[RequestRecord]:
     """The Project's Requests matching every given filter, oldest first; reads local files only.
 
-    `statuses` match any of them (`pending` = not terminal yet); `model` is a part of the
-    model slug or the Endpoint id; `mode` is the Mode code; `since`/`on` compare the local
-    date of the submit.
+    `statuses` match any of them (`pending` = not terminal yet); `model` is matched by
+    `model_matcher`; `mode` is the Mode code; `since`/`on` compare the local date of the
+    submit.
     """
     wanted = {status.lower() for status in statuses}
-    model = model.lower() if model else None
+    of_model = model_matcher(model, quiet_catalog()) if model else None
     found = []
     for record in list_requests(project):
         day = record.submitted_at.astimezone().date()
         naming = record.naming
         if wanted and record.status not in wanted and not (PENDING in wanted and not record.is_terminal):
             continue
-        if model and model not in record.endpoint.lower() and not (naming and model in naming.model_slug):
+        if of_model and not of_model(record):
             continue
         if mode and (naming is None or naming.mode != mode.lower()):
             continue
@@ -55,6 +56,31 @@ def find_requests(
             continue
         found.append(record)
     return found
+
+
+def model_matcher(model: str, catalog: Catalog | None) -> Callable[[RequestRecord], bool]:
+    """Whether a Request belongs to `model`, as the user typed it after `--model`.
+
+    A catalog Model's slug or display name (`kling-3.0`, `Kling 3.0`, as `higgs models list`
+    shows them) matches every Request sent to one of its Endpoints, whatever the tier or
+    Mode. Any value also matches a Request whose Endpoint id or model slug in its names
+    contains it (`kling-video`, `soul`), so a Family-ish word or an Endpoint the catalog
+    lacks still works.
+    """
+    text = model.lower()
+    slug: str | None = None
+    if catalog is not None:
+        try:
+            slug = catalog.model(model).slug
+        except HiggsError:
+            slug = None
+
+    def matches(record: RequestRecord) -> bool:
+        if slug is not None and request_model(record, catalog) == slug:
+            return True
+        return text in record.endpoint.lower() or (record.naming is not None and text in record.naming.model_slug)
+
+    return matches
 
 
 def refresh_request(client: ApiClient, project: Project, record: RequestRecord) -> tuple[RequestRecord, RequestStatus]:

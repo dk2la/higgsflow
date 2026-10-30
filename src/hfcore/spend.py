@@ -14,7 +14,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from hfcore.projects import Project, load_config
-from hfcore.requests import list_requests
+from hfcore.requests import RequestRecord, list_requests
 
 
 class BudgetWarning(BaseModel):
@@ -42,15 +42,17 @@ class PriceCheck(BaseModel):
 
 def project_spend(project: Project) -> Decimal:
     """The sum of `estimate_usd` over the Project's completed Requests."""
-    total = Decimal(0)
-    for record in list_requests(project):
-        if record.status != "completed" or record.estimate_usd is None:
-            continue
-        try:
-            total += Decimal(record.estimate_usd)
-        except InvalidOperation:  # a hand-edited record must not break every submit
-            continue
-    return total
+    return sum((billed_price(record) or Decimal(0) for record in list_requests(project)), Decimal(0))
+
+
+def billed_price(record: RequestRecord) -> Decimal | None:
+    """What a Request adds to Spend: its estimated price once `completed`, else None."""
+    if record.status != "completed" or record.estimate_usd is None:
+        return None
+    try:
+        return Decimal(record.estimate_usd)
+    except InvalidOperation:  # a hand-edited record must not break every submit
+        return None
 
 
 def check_price(project: Project, prices: Sequence[Decimal]) -> PriceCheck:

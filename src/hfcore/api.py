@@ -8,7 +8,7 @@ is a short method: pick the method and path, and parse the body into an `ApiMode
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Self
@@ -198,16 +198,22 @@ class ApiClient:
 
     def list_models(self) -> Any:
         """The undocumented `GET /models`, as raw JSON: its format is unknown, so callers must tolerate anything."""
-        response = self._call("GET", "/models")
-        try:
-            return response.json()
-        except ValueError:
-            raise ApiError(
-                f"Unexpected response from {response.request.url.path}: not JSON",
-                status=response.status_code,
-                correlation_id=response.headers.get("X-Correlation-ID"),
-                code="invalid_response",
-            ) from None
+        return _json(self._call("GET", "/models"))
+
+    def usage(self, start: datetime, end: datetime, *, timeframe: str = "day") -> Any:
+        """Usage analytics of the account (`GET /models/usage`), as raw JSON.
+
+        Documented as `{"time_series": [{"bucket", "results": [{"model", "unit", "quantity",
+        "cost", "currency", ...}]}], "total", "page", "limit"}`; analytics, not a billing record.
+        `start`..`end` may span at most 31 days. One page of up to 100 buckets is fetched.
+        """
+        params: dict[str, str | int] = {
+            "start": _utc(start),
+            "end": _utc(end),
+            "timeframe": timeframe,
+            "limit": 100,
+        }
+        return _json(self._call("GET", "/models/usage", params=params))
 
     def _call_on_request(
         self, method: str, request_id: str, suffix: str, errors: dict[int, tuple[str, str, str]]
@@ -239,10 +245,11 @@ class ApiClient:
         *,
         json: Any = None,
         headers: dict[str, str] | None = None,
+        params: dict[str, str | int] | None = None,
     ) -> httpx.Response:
         """Send one request; a non-2xx response or a network failure raises a `HiggsError`."""
         try:
-            response = self._http.request(method, path, json=json, headers=headers)
+            response = self._http.request(method, path, json=json, headers=headers, params=params)
         except httpx.TransportError as error:
             raise HiggsError(
                 f"Cannot reach the Higgsfield API: {error}",
@@ -252,6 +259,24 @@ class ApiClient:
         if response.is_error:
             raise api_error(response)
         return response
+
+
+def _json(response: httpx.Response) -> Any:
+    """The body as raw JSON, for responses whose shape callers check themselves."""
+    try:
+        return response.json()
+    except ValueError:
+        raise ApiError(
+            f"Unexpected response from {response.request.url.path}: not JSON",
+            status=response.status_code,
+            correlation_id=response.headers.get("X-Correlation-ID"),
+            code="invalid_response",
+        ) from None
+
+
+def _utc(moment: datetime) -> str:
+    """ISO 8601 in UTC with a `Z`, as the API's examples write times."""
+    return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _parse[M: ApiModel](model: type[M], response: httpx.Response) -> M:
