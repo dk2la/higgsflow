@@ -1,0 +1,52 @@
+"""`higgs video <mode>`: video Requests with the common flags (DESIGN.md §7)."""
+
+from __future__ import annotations
+
+import typer
+
+from hfcli.convenience import (
+    AspectOpt,
+    DurationOpt,
+    ModelOpt,
+    NameOpt,
+    NoWaitOpt,
+    ParamOpt,
+    PromptOpt,
+    QualityOpt,
+    generate,
+)
+from hfcli.output import JsonOpt, NoInputOpt, YesOpt
+from hfcli.projects import ProjectOpt
+
+app = typer.Typer(name="video", help="Generate video with the common flags.", no_args_is_help=True)
+
+
+@app.command("t2v")
+def t2v(
+    ctx: typer.Context,
+    model: ModelOpt = None,
+    quality: QualityOpt = None,
+    duration: DurationOpt = None,
+    aspect: AspectOpt = None,
+    prompt: PromptOpt = None,
+    name: NameOpt = None,
+    param: ParamOpt = None,
+    no_wait: NoWaitOpt = False,
+    project: ProjectOpt = None,
+    yes: YesOpt = False,
+    no_input: NoInputOpt = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Text to video."""
+    generate(
+        ctx,
+        mode="t2v",
+        model=model,
+        flags={"prompt": prompt, "quality": quality, "duration": duration, "aspect": aspect},
+        params=param,
+        name=name,
+        project=project,
+        yes=yes,
+        no_wait=no_wait,
+        as_json=as_json,
+    )
