@@ -129,7 +129,8 @@ def train_soul(
             hint="Pass the training images after the name: higgs soul train <name> inputs/a.jpg inputs/b.jpg ...",
             code="soul_image_count",
         )
-    if not force and (taken := load_souls().get(name)) is not None:
+    # Read even with --force: an unreadable registry must fail before training, not after it.
+    if (taken := load_souls().get(name)) is not None and not force:
         raise HiggsError(
             f"A Soul ID named {name} is already registered ({taken.version}, {taken.status}, id {taken.id})",
             hint=(
@@ -250,7 +251,7 @@ def get_soul(name: str) -> Soul:
     registered = load_souls()
     if name in registered:
         return registered[name]
-    close = difflib.get_close_matches(name, list(registered), n=len(registered), cutoff=0.6)
+    close = difflib.get_close_matches(name, list(registered), n=max(len(registered), 1), cutoff=0.6)
     others = close + [other for other in registered if other not in close]
     hint = (
         f"Registered: {', '.join(others)}." if others else "None registered yet; train one with `higgs soul train`."

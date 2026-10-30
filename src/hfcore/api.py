@@ -221,7 +221,19 @@ class ApiClient:
 
     def custom_reference(self, reference_id: str) -> CustomReference:
         """The training status of a Soul ID (`GET /v1/custom-references/{id}`)."""
-        return _parse(CustomReference, self._call("GET", f"/v1/custom-references/{reference_id}"))
+        try:
+            response = self._call("GET", f"/v1/custom-references/{reference_id}")
+        except ApiError as error:
+            if error.status != 404:
+                raise
+            raise ApiError(
+                f"Soul ID {reference_id} is unknown to the API",
+                status=error.status,
+                correlation_id=error.correlation_id,
+                hint="Soul IDs belong to the account that trained them; check the key in use.",
+                code="api_soul_not_found",
+            ) from None
+        return _parse(CustomReference, response)
 
     def list_models(self) -> Any:
         """The undocumented `GET /models`, as raw JSON: its format is unknown, so callers must tolerate anything."""

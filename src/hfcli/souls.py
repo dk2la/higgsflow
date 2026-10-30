@@ -56,6 +56,19 @@ def train(
         print_json(_soul_json(soul))
         return
     typer.echo(f"Soul ID {soul.name} ({soul.version}): {soul.status}")
+    typer.echo(f"Registered in {souls.souls_path()}")
+    _echo_next_step(soul)
+    typer.echo(
+        "The training's price is not estimated (the API documents none) and is not counted in the Project's Spend."
+    )
+
+
+def _echo_next_step(soul: souls.Soul) -> None:
+    if soul.status == "completed":
+        model = souls.VERSIONS.get(soul.version)
+        typer.echo(f"Use it with: higgs image t2i --model {model.model if model else '<SOUL Model>'} --soul {soul.name}")
+    elif not soul.is_terminal:
+        typer.echo(f"Check on it with: higgs soul status {soul.name}")
 
 
 @app.command("list")
@@ -87,7 +100,9 @@ def status(
     if as_json:
         print_json(_soul_json(soul))
         return
-    typer.echo(f"Soul ID {soul.name} ({soul.version}): {soul.status}")
+    reason = f" ({soul.fail_reason})" if soul.status == "failed" and soul.fail_reason else ""
+    typer.echo(f"Soul ID {soul.name} ({soul.version}): {soul.status}{reason}")
+    _echo_next_step(soul)
 
 
 def _soul_json(soul: souls.Soul) -> dict[str, Any]:

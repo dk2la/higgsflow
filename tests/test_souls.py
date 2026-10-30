@@ -221,6 +221,34 @@ def test_too_many_trainings_at_once_waits_for_retry_after_and_starts_again(
     assert souls_toml(config_dir)["souls"]["alice"]["status"] == "queued"
 
 
+def test_polling_waits_for_retry_after_on_a_429(higgs, project, photos, api_key, respx_mock, clock):
+    mock_uploads(respx_mock)
+    respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(200, json=reference("not_ready")))
+    respx_mock.get(f"{CREATE_URL}/{SOUL_ID}").mock(
+        side_effect=[too_many_trainings("7"), httpx.Response(200, json=reference("completed"))]
+    )
+
+    result = higgs("soul", "train", "alice", *photos, "--json")
+
+    assert result.exit_code == 0, result.output
+    assert clock.waits == [7.0]
+
+
+def test_training_as_text_says_where_the_soul_id_is_and_that_its_price_is_unknown(
+    higgs, project, photos, api_key, respx_mock, config_dir
+):
+    mock_uploads(respx_mock)
+    respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(200, json=reference("not_ready")))
+    status_route(respx_mock, "completed")
+
+    result = higgs("soul", "train", "alice", *photos)
+
+    assert result.exit_code == 0, result.output
+    assert "Soul ID alice (v2): completed" in result.output
+    assert "--soul alice" in result.output
+    assert "price" in result.output and "not estimated" in result.output
+
+
 def test_a_failed_create_is_not_retried_and_registers_nothing(higgs, project, photos, api_key, respx_mock, config_dir):
     mock_uploads(respx_mock)
     create = respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(500, json={"detail": "boom"}))
@@ -303,6 +331,32 @@ def test_a_failed_training_fails_the_command_and_is_recorded(higgs, project, pho
     assert "No face detected" in error["message"]
     registered = souls_toml(config_dir)["souls"]["alice"]
     assert (registered["status"], registered["fail_reason"]) == ("failed", "No face detected")
+
+
+def test_any_text_from_the_api_survives_souls_toml(higgs, project, photos, api_key, respx_mock, config_dir):
+    reason = 'Bad "photo"\nC:\\path — лицо не найдено \U0001f642\x7f'
+    mock_uploads(respx_mock)
+    respx_mock.post(CREATE_URL).mock(return_value=httpx.Response(200, json=reference("not_ready")))
+    status_route(respx_mock, "failed", fail_reason=reason)
+
+    higgs("soul", "train", "alice", *photos, "--json")
+
+    assert souls_toml(config_dir)["souls"]["alice"]["fail_reason"] == reason
+    assert json.loads(higgs("soul", "list", "--json").output)["souls"][0]["fail_reason"] == reason
+
+
+@pytest.mark.parametrize("force", [[], ["--force"]])
+def test_an_unreadable_souls_toml_fails_before_training_and_is_never_overwritten(
+    higgs, project, photos, api_key, respx_mock, config_dir, force
+):
+    (config_dir / "souls.toml").write_text("[souls.alice\nid = ")
+
+    result = higgs("soul", "train", "bob", *photos, "--json", *force)
+
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["code"] == "invalid_souls_file"
+    assert (config_dir / "souls.toml").read_text() == "[souls.alice\nid = "
+    assert not respx_mock.calls
 
 
 def test_soul_list_shows_the_registered_soul_ids_without_calling_the_api(
@@ -444,3 +498,26 @@ def test_soul_list_without_any_soul_ids_says_how_to_train_one(higgs):
     assert result.exit_code == 0
     assert "higgs soul train" in result.output
     assert json.loads(higgs("soul", "list", "--json").output)["souls"] == []
+
+
+def test_soul_status_of_an_unknown_name_fails_without_calling_the_api(higgs, api_key, respx_mock):
+    result = higgs("soul", "status", "alice", "--json")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "soul_not_found"
+    assert "higgs soul train" in error["hint"]
+    assert not respx_mock.calls
+
+
+def test_soul_status_of_a_soul_id_the_api_does_not_know_says_so(higgs, project, photos, api_key, respx_mock):
+    assert train(higgs, respx_mock, "alice", args=["--no-wait"]).exit_code == 0
+    respx_mock.get(f"{CREATE_URL}/{SOUL_ID}").mock(return_value=httpx.Response(404, json={"detail": "Not found"}))
+
+    result = higgs("soul", "status", "alice", "--json")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "api_soul_not_found"
+    assert SOUL_ID in error["message"]
+    assert "account" in error["hint"]
