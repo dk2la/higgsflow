@@ -19,6 +19,11 @@ created_at = 2026-10-30T12:00:00Z
 updated_at = 2026-10-30T12:04:10Z
 thumbnail_url = "https://..."
 ```
+
+`--soul <name>` (`soul_reference_id`) turns a registered name into the `custom_reference_id`
+of a SOUL Endpoint. Each version is trained for one SOUL Model (`VERSIONS`: v1 → `soul`,
+v2 → `soul-v2`, cinema → `soul-cinema`), and a Soul ID only works with its own: a v1 Soul ID
+on `soul-v2` is an error, not a silent mismatch.
 """
 
 from __future__ import annotations
@@ -70,10 +75,6 @@ VERSIONS: dict[str, SoulModel] = {
     "v2": SoulModel("soul-v2", "higgsfield-ai/soul/v2/standard"),
     "cinema": SoulModel("soul-cinema", "higgsfield-ai/soul/cinema"),
 }
-
-
-def _version_models() -> str:
-    return ", ".join(f"{version} for {soul_model.model}" for version, soul_model in VERSIONS.items())
 
 # Called with each status seen while waiting for a training.
 SoulProgress = Callable[[CustomReference], None]
@@ -195,6 +196,10 @@ def check_version(version: str) -> str:
             code="invalid_soul_version",
         )
     return normalized
+
+
+def _version_models() -> str:
+    return ", ".join(f"{version} for {soul_model.model}" for version, soul_model in VERSIONS.items())
 
 
 def _create_with_retries(client: ApiClient, body: dict[str, Any]) -> CustomReference:

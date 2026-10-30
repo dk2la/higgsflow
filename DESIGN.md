@@ -99,6 +99,11 @@ The default projects root is `~/hf-projects` (configurable). `higgs init <name>`
 Global: `~/.config/higgs/` — credentials, config (projects root), `models.local.toml`,
 `catalog.json` (written by `higgs models sync`), `souls.toml` (Soul ID registry: name → id;
 global because Soul IDs belong to the account and the API has no endpoint to list them).
+`souls.toml` has one `[souls.<name>]` table per Soul ID: `id`, `version` (`v1`/`v2`/`cinema`), `status`,
+`images` (count), `project` (where the images came from), `created_at`, `updated_at` (TOML datetimes, UTC)
+and, once known, `thumbnail_url` and `fail_reason`. It is written atomically by `hfcore.souls` only; an
+unreadable file fails every Soul ID command (`invalid_souls_file`) and is never overwritten, since it is
+the only record of the ids.
 
 **References:** any file in `references/` is a Reference, whether put there by hand or via
 `higgs ref save` (which copies the Generation together with its `.json`). A Reference name is unique
@@ -300,15 +305,38 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   i2i's `image_urls` and prompt are required by its schema. A Model's own `batch_size` (SOUL: 1 or 4) is `-p`:
   one Request with several Generations `..._v01-1.png` … `-4` (§5); with `--count 2` that is `v01-1..4`,
   `v02-1..4` from one price confirmation.
-- **Hook points for `--soul` (#21) and `--preset` (#22).** Each is a `Flag` in `FLAGS` (`--soul` →
+- **Hook points for `--soul` (#21, done) and `--preset` (#22).** Each is a `Flag` in `FLAGS` (`--soul` →
   `custom_reference_id`) plus an option on `t2i`/`i2i` that goes into the `flags` dict; `generate` swaps the
   name for the looked-up value right after the Endpoint is resolved (so the SOUL version can be checked) and
   before defaults and mapping, after which it maps like any other flag.
 
 - `--soul <name>` resolves the name via `souls.toml` and checks that the Soul ID version matches the SOUL model.
+  (#21; `hfcore.souls.soul_reference_id`, called by `generate` right after `_endpoint`.) Each version matches
+  exactly one SOUL Endpoint (`hfcore.souls.VERSIONS`): `v1` → `soul` (`higgsfield-ai/soul/standard`), `v2` →
+  `soul-v2` (`higgsfield-ai/soul/v2/standard`), `cinema` → `soul-cinema` (`higgsfield-ai/soul/cinema`); these
+  are the three Endpoints with `custom_reference_id`. Checks, in order, all before any upload or call:
+  the Endpoint takes a Soul ID (else `unsupported_flag`); it is in `VERSIONS` (a `models.local.toml`
+  Endpoint with `custom_reference_id` is `soul_version_unknown`, use `-p custom_reference_id=`); the name is
+  registered (`soul_not_found`); the versions match (`soul_version_mismatch`); the training completed
+  (`soul_not_ready` / `soul_training_failed` — a registered status that is not final is refreshed from the
+  API once first, so a `--no-wait` training that finished since is usable at once).
 - Soul ID training is not a Request: it is account-scoped, is not written to the project's `.hf/` and
   does not count toward project spend. `soul train` polls `GET /v1/custom-references/{id}` the same
   way as a generation and supports `--no-wait`; `soul status` checks on it later.
+  (#21; `hfcore.souls`, `hfcli.souls`.) Only the training images' upload cache lands in the Project's
+  `.hf/uploads.json`; `.hf/requests/` and Spend are untouched. `soul train <name> <images...>`
+  [`--version v1|v2|cinema`, default `v2`, the current SOUL Model; the API's default is `v1`]
+  [`--force`] [`--no-wait`] [`--project`] [`--json`]: the name (letters, digits, `.`, `_`, `-`, ≤ 100; it is
+  also the API `name`), the version, 1–100 images (`soul_image_count`, before any file is looked at), every
+  image an image file in the projects root (`images_only` in `resolve_inputs`) and a free name are checked
+  before the first upload; a taken name fails with `soul_exists` unless `--force`, which re-points the name
+  at the new training (the API cannot delete the old one). The Soul ID is registered right after the create
+  response, like a Request record. A 429 on create (too many trainings) waits for `Retry-After` and creates
+  again (up to `SUBMIT_ATTEMPTS`); nothing else is retried, because the create takes no Idempotency-Key and a
+  retried ambiguous failure could train twice. Polling reuses `lifecycle.Backoff`/`retry_wait`. A `failed`
+  training exits with `soul_training_failed`. The training's price is unknown (§9) and no estimate exists,
+  so nothing is shown or confirmed. `soul list` reads `souls.toml` only; `soul status <name>` asks the API
+  once (`api_soul_not_found` for an id of another account) and updates the file.
 - `--count N` submits N separate Requests with the same parameters (a different seed each, if the model
   supports seeds); the total price is shown and confirmed once. A model's own `batch_size` is not
   affected and is passed as a regular parameter (`-p batch_size=...`).
@@ -367,6 +395,10 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 - Soul ID: `POST /v1/custom-references` (1–100 images, `model_version` v1/v2/cinema), poll
   `GET /v1/custom-references/{id}`, then pass the id as `custom_reference_id` to a matching SOUL endpoint.
   Account-scoped; no list endpoint; too many trainings at once → 429 with `Retry-After`.
+  Create body `{name (≤ 100), model_version, input_images: [{type: "image_url", image_url}]}`; the response
+  (also of the GET) is `{id, name, model_version, status, thumbnail_url, created_at, in_progress_at,
+  fail_reason}`; statuses `not_ready`, `queued`, `in_progress`, `completed`, `failed`. No Idempotency-Key
+  is documented for the create.
 - Cancel: `POST /requests/{id}/cancel` (202, or 400 if already in progress).
   Delete: `DELETE /requests/{id}` (409 while queued/in_progress).
 - Limits are by concurrency; requests beyond the limit are queued, queue overflow → 429.
