@@ -42,9 +42,22 @@ higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch
                                  # validates, submits a Request, waits for it and downloads the Generations
 higgs gen bytedance/seedance-2.0/text-to-video -p prompt="Waves at dusk" --name sunset-beach \
   --no-wait                      # only submits; the record lands in .hf/requests/<request_id>.json
+higgs status [<request-id>]      # refreshes one Request, or every pending one, from the API
+higgs sync                       # checks every Request not downloaded yet once; downloads the completed ones
+higgs download <request-id>      # downloads a completed Request's Generations again, while its links are alive
+higgs list --status pending --model kling --mode i2v --since 2026-10-01   # history from local files only
 higgs pick generations/2026-10-30/<file>.png
                                  # copies the Generation, its .json and Artifacts into final/
 ```
+
+`status` never downloads; `sync` does, without waiting: each Request not downloaded yet gets one status
+check, a completed one is downloaded exactly once (its record gets `downloaded_at`), a failed, nsfw or
+canceled one is recorded and left alone, and one whose links have expired is reported without an API
+call. If a Request cannot be synced, the others still are and `sync` exits with an error; run it again.
+`download` fails before any API call once the Request's `expires_at` has passed or it was deleted with
+`higgs delete`. `list` reads only `.hf/requests/` (no API calls, no key needed); `--status` is repeatable
+(`pending` = not finished yet), `--model` matches a part of the model slug or Endpoint id, `--date` picks
+one day.
 
 Without `--no-wait`, `higgs gen` polls the Request (2 s backing off to 10 s, waiting out a full queue and
 retrying transient errors) and downloads every Generation and Artifact into `generations/YYYY-MM-DD/` as
