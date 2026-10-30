@@ -230,6 +230,24 @@ def test_endpoints_from_get_models_missing_in_the_docs_are_merged(higgs, serve, 
     assert all(e["source"] == "docs" and e["parameters"] for e in kling_3)
 
 
+def test_an_endpoint_from_get_models_takes_any_parameters_without_no_validate(
+    higgs, serve, project, api_key, respx_mock
+):
+    serve()
+    respx_mock.get(MODELS_URL).respond(200, json=API_MODELS)
+    sync(higgs)
+    submit = respx_mock.post("https://api.higgsfield.ai/kling-video/v4.0/text-to-video").respond(
+        200, json={"status": "queued", "request_id": "d7e6c0f3-6699-4f6c-bb45-2ad7fd9158ff"}
+    )
+
+    result = higgs(
+        "gen", "kling-video/v4.0/text-to-video", "-p", "prompt=Waves at dusk", "-p", "duration=7", "--no-wait", "--json"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(submit.calls.last.request.content) == {"prompt": "Waves at dusk", "duration": 7}
+
+
 def test_endpoints_from_get_models_that_cannot_be_placed_are_skipped_with_a_note(
     higgs, serve, api_key, respx_mock
 ):

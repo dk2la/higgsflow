@@ -3,7 +3,8 @@
 Layers, from the bottom up (DESIGN.md §6):
 1. the baked-in `catalog.json` shipped as package data (built from the docs snapshot);
 2. `<config dir>/catalog.json` written by `higgs models sync`, replacing layer 1 when present (#15);
-3. `<config dir>/models.local.toml`, adding Models missing from the docs (#14).
+3. `<config dir>/models.local.toml`, adding Endpoints missing from the docs or replacing
+   documented ones with the same id (`hfcore.catalog.local`).
 Layers 1–2 make the base catalog (`load_base_catalog`), the one `models sync` compares with.
 """
 
@@ -15,6 +16,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from hfcore.catalog import local
 from hfcore.catalog.model import Catalog
 from hfcore.errors import HiggsWarning
 
@@ -63,4 +65,7 @@ def _first_problem(error: ValidationError) -> str:
 
 def load_catalog(config_dir: Path | None = None) -> Catalog:
     """The effective catalog for this user."""
-    return load_base_catalog(config_dir)
+    catalog = load_base_catalog(config_dir)
+    if config_dir is not None:
+        catalog = local.extend(catalog, config_dir / local.LOCAL_FILE)
+    return catalog

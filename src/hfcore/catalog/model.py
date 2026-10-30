@@ -80,9 +80,10 @@ class Price(BaseModel):
 class Endpoint(BaseModel):
     """One Higgsfield API path with its own parameter schema.
 
-    `source` says where the Endpoint comes from: "docs" (the documentation, full schema) or
-    "api" (listed only by the undocumented `GET /models` during `higgs models sync`: no
-    parameters and an empty `input_schema`, so validation lets any parameters through).
+    `source` says where the Endpoint comes from: "docs" (the documentation, full schema),
+    "local" (`models.local.toml`) or "api" (listed only by the undocumented `GET /models`
+    during `higgs models sync`: no parameters and an empty `input_schema`, so validation lets
+    any parameters through).
     """
 
     id: str
