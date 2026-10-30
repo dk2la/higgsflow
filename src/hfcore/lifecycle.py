@@ -11,12 +11,24 @@ from datetime import UTC, datetime
 from typing import Any
 
 from hfcore.api import ApiClient
+from hfcore.inputs import Input
 from hfcore.projects import Project
 from hfcore.requests import RequestRecord, save_request
 
 
-def submit_request(client: ApiClient, project: Project, endpoint: str, params: dict[str, Any]) -> RequestRecord:
-    """Submit a Request and write its record before doing anything else."""
+def submit_request(
+    client: ApiClient,
+    project: Project,
+    endpoint: str,
+    params: dict[str, Any],
+    *,
+    inputs: list[Input] | None = None,
+) -> RequestRecord:
+    """Submit a Request and write its record before doing anything else.
+
+    `params` must already be resolved (`hfcore.inputs.resolve_inputs`); `inputs` are the
+    local files behind them, kept on the record.
+    """
     endpoint = endpoint.strip("/")
     idempotency_key = str(uuid.uuid4())
     submitted = client.submit(endpoint, params, idempotency_key=idempotency_key)
@@ -26,6 +38,7 @@ def submit_request(client: ApiClient, project: Project, endpoint: str, params: d
         request_id=submitted.request_id,
         endpoint=endpoint,
         params=params,
+        inputs=inputs or [],
         prompt=prompt if isinstance(prompt, str) else None,
         status=submitted.status,
         submitted_at=now,

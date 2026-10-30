@@ -45,6 +45,15 @@ the nearest `project.toml`, like git; `--project <name>` picks another one. `-p`
 when they are valid JSON (`5`, `0.5`, `true`, `null`, `[...]`, `{...}`) and are strings otherwise
 (`16:9`); quote a value to force a string (`-p 'seed="42"'`). Every command takes `--json`.
 
+A `-p` value that is a local file is an Input: it is uploaded before the submit and replaced by its
+`public_url`, also inside lists and objects (`-p image_url=inputs/a.jpg`,
+`-p 'images=["inputs/a.jpg","inputs/b.png"]'`). A string counts as a file when it names an existing file
+(relative to the current directory, or absolute) or ends in `.jpg`/`.jpeg`/`.png`/`.webp`/`.gif`/`.wav`/`.mp4`
+(then a missing file is an error); URLs are left alone. The file must be inside the projects root (copy it
+into the Project's `inputs/` first) and really be a jpeg, png, webp, gif, wav or mp4, judged by its content.
+Uploads are cached by content in `.hf/uploads.json` and reused for up to 7 days, and the Request record lists
+the Inputs it used.
+
 For now `higgs gen` requires `--no-validate` (validation against the catalog is not built yet) and `--no-wait`
 (waiting for and downloading the result is not built yet).
 
