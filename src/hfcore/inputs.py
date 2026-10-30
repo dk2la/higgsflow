@@ -123,6 +123,11 @@ def _replace(value: Any, param: str, urls: dict[str, str]) -> Any:
     return value
 
 
+def is_input(value: str, cwd: Path) -> bool:
+    """Whether `resolve_inputs` will treat this param value as a local file to upload."""
+    return _locate(value, cwd) is not None
+
+
 def _locate(value: str, cwd: Path) -> Path | None:
     """The local file a param value names, or None when it is a plain string."""
     if "://" in value or "\n" in value:
