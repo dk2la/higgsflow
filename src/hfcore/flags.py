@@ -206,7 +206,8 @@ def _enum_match(parameter: Parameter, value: Any) -> Any:
 
 
 def unsupported(endpoint: Endpoint, key: str) -> HiggsError:
-    supported = [flag.option for flag in FLAGS.values() if flag_parameter(endpoint, flag.key) is not None]
+    # `--image` is two flags (video's start frame, image's input images), so options are listed once.
+    supported = list(dict.fromkeys(flag.option for flag in FLAGS.values() if flag_parameter(endpoint, flag.key) is not None))
     return HiggsError(
         f"{FLAGS[key].option} is not supported by {endpoint.model} {endpoint.mode}",
         hint=(

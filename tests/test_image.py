@@ -338,6 +338,15 @@ def test_image_is_not_supported_by_a_model_without_input_images(higgs, project, 
     assert not respx_mock.calls
 
 
+def test_an_unsupported_flag_lists_the_flags_of_the_model_once(higgs, project, api_key, respx_mock):
+    result = image(higgs, "t2i", "--model", "ideogram-4.0", "--prompt", "A lighthouse", "--seed", "7", "--json", "--yes")
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["message"] == "--seed is not supported by ideogram-4.0 t2i"
+    assert error["hint"].startswith("Its flags: --prompt, --image, --aspect, --quality; ")
+
+
 # (model, endpoint, --quality, expected body): each Model names its quality its own way.
 QUALITY_MAPPINGS = [
     ("grok-image-2.0", "xai/grok-imagine-image-2.0", "medium", {"quality": "medium"}),
