@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Host wrapper for the higgs CLI: runs it inside a Docker Desktop container.
+# Install: ln -s "$PWD/bin/higgs" ~/.local/bin/higgs
+set -euo pipefail
+
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  dir="$(cd -P "$(dirname "$self")" && pwd)"
+  self="$(readlink "$self")"
+  [[ "$self" != /* ]] && self="$dir/$self"
+done
+# shellcheck source=bin/lib.sh
+source "$(cd -P "$(dirname "$self")" && pwd)/lib.sh"
+
+config_dir="${HIGGS_CONFIG_DIR:-$HOME/.config/higgs}"
+
+# The projects root: env override, then `projects_root = "..."` in config.toml, then the default.
+projects_root="${HIGGS_PROJECTS_ROOT:-}"
+if [ -z "$projects_root" ] && [ -f "$config_dir/config.toml" ]; then
+  projects_root="$(sed -nE 's/^[[:space:]]*projects_root[[:space:]]*=[[:space:]]*"(.*)"[[:space:]]*$/\1/p' "$config_dir/config.toml" | head -n1)"
+fi
+projects_root="${projects_root:-$HOME/hf-projects}"
+projects_root="${projects_root/#\~/$HOME}"
+
+mkdir -p "$projects_root" "$config_dir"
+image="$(higgs_ensure_image)"
+
+# Only the projects root is visible inside the container; run from the current
+# directory when it is inside it, so relative paths and Project discovery work.
+case "$PWD/" in
+  "$projects_root"/*) workdir="$PWD" ;;
+  *) workdir="$projects_root" ;;
+esac
+
+tty_flags=(-i)
+[ -t 0 ] && [ -t 1 ] && tty_flags=(-it)
+
+env_flags=()
+for var in HF_KEY HF_API_KEY HF_API_SECRET; do
+  [ -n "${!var:-}" ] && env_flags+=(-e "$var")
+done
+
+exec "${HIGGS_DOCKER[@]}" run --rm "${tty_flags[@]}" \
+  --user "$(id -u):$(id -g)" \
+  -e HOME="$HOME" \
+  -e HIGGS_CONFIG_DIR="$config_dir" \
+  -e HIGGS_PROJECTS_ROOT="$projects_root" \
+  -e HIGGS_HOST_PWD="$PWD" \
+  ${env_flags[@]+"${env_flags[@]}"} \
+  -v "$projects_root:$projects_root" \
+  -v "$config_dir:$config_dir" \
+  -w "$workdir" \
+  "$image" "$@"

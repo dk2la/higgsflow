@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Development commands, all run inside the Docker Desktop container (ADR 0003).
+#   scripts/dev test [pytest args]   run the test suite
+#   scripts/dev typecheck            run mypy
+#   scripts/dev shell                open a shell in the dev container
+set -euo pipefail
+
+# shellcheck source=bin/lib.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bin/lib.sh"
+
+repo="$(higgs_repo_dir)"
+image="$(higgs_ensure_image)"
+
+tty_flags=(-i)
+[ -t 0 ] && [ -t 1 ] && tty_flags=(-it)
+
+run() {
+  "${HIGGS_DOCKER[@]}" run --rm "${tty_flags[@]}" -v "$repo:/app" -w /app --entrypoint "$1" "$image" "${@:2}"
+}
+
+command="${1:-test}"
+shift || true
+case "$command" in
+  test) run pytest "$@" ;;
+  typecheck) run mypy "$@" ;;
+  shell) run bash "$@" ;;
+  *) echo "usage: scripts/dev {test|typecheck|shell} [args]" >&2; exit 2 ;;
+esac
