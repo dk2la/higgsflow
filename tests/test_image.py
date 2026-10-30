@@ -11,6 +11,8 @@ import httpx
 import pytest
 import respx
 
+from hfcore.catalog.loader import load_baked_in
+
 API = "https://api.higgsfield.ai"
 
 
@@ -125,6 +127,40 @@ def test_image_maps_the_input_images_per_model(
     assert body(route) == {"prompt": "In this style", **expected}
     record = json.loads(result.output)[0]["record"]
     assert [item["source"] for item in record["inputs"]] == values
+
+
+CATALOG = load_baked_in()
+T2I_I2I = [endpoint for endpoint in CATALOG.endpoints if endpoint.mode in ("t2i", "i2i")]
+IMAGE_PARAMS = {"image_urls", "image_url", "image_reference_url"}
+
+
+def test_the_image_modes_cover_every_image_endpoint_but_ads_studio():
+    # DESIGN.md §6: 14 t2i Endpoints and Qwen Image 3 edit (i2i); Ads Studio is reachable only via higgs gen.
+    assert len([endpoint for endpoint in T2I_I2I if endpoint.mode == "t2i"]) == 14
+    assert [endpoint.id for endpoint in T2I_I2I if endpoint.mode == "i2i"] == ["alibaba/qwen-image-3/edit"]
+
+
+@pytest.mark.parametrize("endpoint", T2I_I2I, ids=[endpoint.id for endpoint in T2I_I2I])
+def test_every_t2i_and_i2i_endpoint_is_reachable_with_the_common_flags(
+    higgs, project, api_key, respx_mock, estimate, images, endpoint
+):
+    mock_uploads(respx_mock)
+    route = mock_submit(respx_mock, endpoint.id)
+    aspects = endpoint.parameter("aspect_ratio").enum
+    args = ["--model", endpoint.model, "--prompt", "A quiet harbour at dawn", "--aspect", str(aspects[-1])]
+    takes_images = any(parameter.name in IMAGE_PARAMS for parameter in endpoint.parameters)
+    if takes_images:
+        args += ["--image", "inputs/a.jpg"]
+
+    result = image(higgs, endpoint.mode, *args, "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    sent = body(route)
+    assert sent["prompt"] == "A quiet harbour at dawn"
+    assert sent["aspect_ratio"] == aspects[-1]
+    if takes_images:
+        [image_param] = [name for name in IMAGE_PARAMS if name in sent]
+        assert sent[image_param] in (UPLOAD_1, [UPLOAD_1])
 
 
 def test_several_images_on_a_model_that_takes_one_fail_before_any_call(higgs, project, api_key, respx_mock, images):
