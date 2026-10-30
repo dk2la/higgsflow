@@ -35,8 +35,8 @@ higgs projects                   # lists the Projects under the projects root
 higgs models list --mode i2v     # Models with their Family, Modes, quality tiers and "from" price
 higgs models show kling-3.0      # every Endpoint of a Model: parameters, allowed values, prompt limits
 cd ~/hf-projects/demo
-higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=2 \
-  --no-validate --no-wait        # submits a Request; its record lands in .hf/requests/<request_id>.json
+higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=4 \
+  --no-wait                      # validates, submits a Request; its record lands in .hf/requests/<request_id>.json
 ```
 
 The key can also come from `HF_KEY="id:secret"` or `HF_API_KEY` + `HF_API_SECRET`, which take precedence
@@ -54,8 +54,74 @@ into the Project's `inputs/` first) and really be a jpeg, png, webp, gif, wav or
 Uploads are cached by content in `.hf/uploads.json` and reused for up to 7 days, and the Request record lists
 the Inputs it used.
 
-For now `higgs gen` requires `--no-validate` (validation against the catalog is not built yet) and `--no-wait`
-(waiting for and downloading the result is not built yet).
+`higgs gen` validates the parameters against the Endpoint in the catalog before anything is uploaded or sent:
+required parameters, types, allowed values, ranges, string lengths, array sizes, the schema's conditional rules,
+parameters the Endpoint does not have, and prompt tokens such as `<<<image_2>>>` (which need a second item in
+`image_urls`). Every problem is reported at once; with `--json` the error carries a list of
+`{"param", "constraint", "message"}`, where `param` is a path such as `multi_prompt[0].prompt` and `constraint` is
+the JSON Schema keyword that failed (`required`, `type`, `enum`, `maximum`, `maxLength`, `maxItems`, `format`, …),
+`unknown` or `token`:
+
+```json
+{"error": {"code": "validation_failed", "message": "Invalid parameters for kling-video/v3.0/pro/image-to-video: ...",
+  "problems": [{"param": "duration", "constraint": "maximum", "message": "must be at most 15; got 20"}]}}
+```
+
+A local file path stands in for the URL it will be uploaded to, so `-p image_url=inputs/a.jpg` is valid.
+`--no-validate` skips the check and submits the parameters as they are, to any path, even one missing from the
+catalog (a wrong id is a free 404). An Endpoint id that is not in the catalog fails without `--no-validate`.
+
+For now `higgs gen` also requires `--no-wait` (waiting for and downloading the result is not built yet).
+
+### Models missing from the docs: `models.local.toml`
+
+Describe an Endpoint the docs do not have (yet) in `~/.config/higgs/models.local.toml`; it then shows up in
+`higgs models list` / `models show` and `higgs gen` validates against it like against a documented one. Each
+`[[endpoint]]` table is one Endpoint, followed by one `[endpoint.parameters.<name>]` table per parameter:
+
+```toml
+[[endpoint]]
+id = "kling-video/v4.0/pro/image-to-video"   # the API path (take it from the Console; it cannot be guessed)
+model = "Kling 4.0"                          # Model name; slug kling-4.0. An existing Model's name joins it
+family = "kling"                             # Family id; a new id adds a Family (name it with family_name = "...")
+mode = "i2v"                                 # t2v, i2v, ref, vref, edit, extend, motion, restyle, t2i, i2i, ads
+# tier = "pro"                               # only when the Model has several quality tiers in this Mode
+price = { usd = "0.07", unit = "second" }    # optional "from" price; unit "second" or "image"
+notes = ["image_url is the first frame."]    # optional; title and doc_url are optional too
+
+[endpoint.prompt]                            # optional: prompts longer than this are cut by the provider
+truncated_after = 2500                       # (tokens = ["<<<image_1>>>"] would allow media tokens)
+
+[endpoint.parameters.image_url]
+type = "string"                              # string, integer, number, boolean, array, object
+required = true
+format = "uri"
+description = "The first frame."
+
+[endpoint.parameters.prompt]
+type = "string"
+required = true
+max_length = 2500
+
+[endpoint.parameters.duration]
+type = "integer"
+default = 5
+minimum = 3
+maximum = 15
+
+[endpoint.parameters.sound]
+type = "string"
+enum = ["on", "off"]
+default = "on"
+```
+
+Parameter keys: `type`, `required`, `default`, `enum`, `minimum`, `maximum`, `multiple_of`, `min_length`,
+`max_length`, `min_items`, `max_items`, `item_type` (for arrays), `format`, `nullable`, `description`. Only the
+listed parameters are accepted. The prompt's required flag and lengths come from the `prompt` and
+`negative_prompt` parameters. An entry whose `id` is a documented Endpoint replaces it as a whole (it is not
+merged with the documented one), so it can correct or extend a schema. A malformed file (bad TOML, an unknown
+key, an unknown mode, a duplicate id, a second untiered Endpoint for the same Model and Mode) fails every
+catalog command with an error naming the file and the problem.
 
 ## Development
 

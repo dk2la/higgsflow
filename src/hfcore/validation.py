@@ -154,7 +154,7 @@ def _problem(error: ValidationError) -> Problem:
     if keyword in ("anyOf", "oneOf") and error.context:
         if all(inner.validator == "type" for inner in error.context):
             types = [inner.validator_value for inner in error.context]
-            message = f"must be {_types(types)}, got {_show(error.instance)}"
+            message = f"must be {_types(types)}; got {_show(error.instance)}"
             return Problem(param=path, constraint="type", message=message)
         specific = next(inner for inner in error.context if inner.validator != "type")
         return _problem(specific)
@@ -166,7 +166,7 @@ def _message(keyword: str, limit: Any, value: Any) -> str | None:
     size = len(value) if isinstance(value, (str, list)) else None
     match keyword:
         case "type":
-            return f"must be {_types([limit])}, got {_show(value)}"
+            return f"must be {_types([limit])}; got {_show(value)}"
         case "enum":
             return f"must be one of {', '.join(_show(item) for item in limit)}; got {_show(value)}"
         case "const":

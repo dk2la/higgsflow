@@ -170,7 +170,12 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
      the ID cannot be guessed from the marketing name — take it from the Console/docs/pricing;
      a wrong ID → 404 with no charge;
   2. a manual description in `~/.config/higgs/models.local.toml` (path, parameters, alias) —
-     the model shows up in `models list` and in the convenience commands with validation;
+     the model shows up in `models list` and in the convenience commands with validation.
+     One `[[endpoint]]` table per Endpoint (`id`, `model`, `family`, `mode`, optional `tier`, `price`,
+     `notes`, `[endpoint.prompt]` soft limits) with one `[endpoint.parameters.<name>]` table per
+     parameter (format in the README). It is layered last in `load_catalog`: new ids add Endpoints (and
+     Models/Families), an existing id replaces that Endpoint as a whole. A malformed file is an
+     `invalid_models_local` error naming the file;
   3. `models sync` tries the undocumented `GET /models` with the key and merges the result
      if it returns anything (the code tolerates any response format).
 
@@ -218,7 +223,12 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 
 ## 8. Generation lifecycle
 
-1. Validate parameters against the catalog schema.
+1. Validate parameters against the catalog schema (`hfcore.validation.validate_params`), on the values as
+   given: the Endpoint's `input_schema` via `jsonschema` (incl. `if`/`then`/`else`, `allOf`), plus
+   parameters the Endpoint does not have and prompt tokens without attached media. A local file path
+   stands in for its future upload URL. All problems are reported at once (`validation_failed`, a list of
+   `{param, constraint, message}`); `--no-validate` skips this step, and only then may the Endpoint be
+   missing from the catalog. The provider's soft prompt limit (`truncated_after`) is not an error.
 2. Local files (`inputs/a.jpg`, `@hero`) are uploaded automatically:
    `POST /files/generate-upload-url` → `PUT` with `upload_headers` → `public_url`.
    Cached by sha256 for 7 days (the API deletes uploads after 7 days); an entry is reused while
