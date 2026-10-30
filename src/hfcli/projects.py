@@ -1,13 +1,29 @@
-"""`higgs init` and `higgs projects`."""
+"""`higgs init`, `higgs projects`, and the current Project for project-scoped commands.
+
+A project-scoped command takes `project: ProjectOpt = None` and calls
+`current_project(project)` to get the Project it works in.
+"""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from hfcore import config, projects
+from hfcore.projects import Project
 from hfcli.output import JsonOpt, print_json
+
+ProjectOpt = Annotated[
+    str | None,
+    typer.Option("--project", help="Work in this Project instead of the one around the current directory."),
+]
+
+
+def current_project(name: str | None) -> Project:
+    """The Project a command works in: `--project <name>`, else found from the current directory."""
+    return projects.current_project(Path.cwd(), name=name)
 
 
 def init(

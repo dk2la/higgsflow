@@ -57,6 +57,42 @@ def list_projects() -> list[Project]:
     ]
 
 
+def find_project(start: Path) -> Project | None:
+    """The Project containing `start`: the nearest folder upwards with a `project.toml`, like git."""
+    start = start.resolve()
+    for folder in (start, *start.parents):
+        if (folder / PROJECT_FILE).is_file():
+            return Project(name=folder.name, path=folder)
+    return None
+
+
+def get_project(name: str) -> Project:
+    """The Project with this name under the projects root."""
+    _check_name(name)
+    path = config.projects_root() / name
+    if not (path / PROJECT_FILE).is_file():
+        raise HiggsError(
+            f"No Project {name} in {path.parent}",
+            hint="See `higgs projects` for the existing ones, or create it with `higgs init`.",
+            code="project_not_found",
+        )
+    return Project(name=name, path=path)
+
+
+def current_project(cwd: Path, *, name: str | None = None) -> Project:
+    """The Project for a project-scoped command: the one named, else the one around `cwd`."""
+    if name is not None:
+        return get_project(name)
+    found = find_project(cwd)
+    if found is None:
+        raise HiggsError(
+            "Not in a Project",
+            hint="Run `higgs init <name>` and cd into it, or pass --project <name>.",
+            code="not_in_project",
+        )
+    return found
+
+
 def _check_name(name: str) -> None:
     # A Project name is a single folder directly under the projects root.
     if not name or name.startswith(".") or "/" in name or "\\" in name:
