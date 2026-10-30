@@ -60,7 +60,13 @@ def list_requests(
         list[str] | None,
         typer.Option("--status", help="Only Requests with this status (repeatable); `pending` = not finished yet."),
     ] = None,
-    model: Annotated[str | None, typer.Option("--model", help="Only Models whose slug or Endpoint id contains this.")] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Only this Model (slug or name, as `higgs models list` shows it), or Endpoint ids / model slugs containing this.",
+        ),
+    ] = None,
     mode: Annotated[str | None, typer.Option("--mode", help="Only this Mode (t2v, i2v, t2i, ...).")] = None,
     since: Annotated[
         datetime | None,

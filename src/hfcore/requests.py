@@ -102,18 +102,30 @@ def new_naming(project: Project, endpoint: str, *, prompt: str | None, name: str
     The model slug and Mode come from the effective catalog when it has the Endpoint, else
     from the Endpoint id (`naming.model_and_mode`).
     """
-    model_slug, mode = naming.model_and_mode(endpoint, _naming_catalog())
+    model_slug, mode = naming.model_and_mode(endpoint, quiet_catalog())
     slug = naming.request_slug(name, prompt)
     version = naming.next_version((record.naming for record in list_requests(project)), slug)
     return Naming(model_slug=model_slug, mode=mode, slug=slug, version=version)
 
 
-def _naming_catalog() -> Catalog | None:
-    """The effective catalog, for names only; None when it cannot be loaded.
+def request_model(record: RequestRecord, catalog: Catalog | None) -> str | None:
+    """The catalog Model a Request was sent to, as its slug (`kling-3.0`, as `higgs models list`
+    shows it); None when the catalog does not have the Request's Endpoint."""
+    if catalog is None:
+        return None
+    try:
+        return catalog.endpoint(record.endpoint).model
+    except HiggsError:
+        return None
+
+
+def quiet_catalog() -> Catalog | None:
+    """The effective catalog for describing Requests (names, Models); None when it cannot be loaded.
 
     Naming never fails or warns because of the catalog: a broken `models.local.toml` must
     not block a raw `--no-validate` call (its name then comes from the Endpoint id), and
-    validation has already warned about an unreadable user catalog.
+    validation has already warned about an unreadable user catalog. Listing Requests and
+    reporting Spend read local files only and must not fail because of it either.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", HiggsWarning)

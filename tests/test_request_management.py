@@ -154,6 +154,21 @@ def test_list_filters_by_status_model_mode_and_date(higgs, project, api_key, res
     assert [item["request_id"] for item in json.loads(result.output)["requests"]] == expected
 
 
+@pytest.mark.parametrize("model", ["kling-3.0", "Kling 3.0", "KLING-3.0"])
+def test_list_model_takes_the_model_slug_or_name_from_the_catalog(higgs, project, api_key, respx_mock, clock, model):
+    # Every tier and Mode of Kling 3.0, but not Kling 3.0 Turbo (another Model of the Family).
+    submit(higgs, respx_mock, REQUEST_ID, endpoint="kling-video/v3.0/pro/image-to-video")
+    clock.advance(minutes=1)
+    submit(higgs, respx_mock, OTHER_ID, endpoint="kling-video/v3.0/std/text-to-video")
+    clock.advance(minutes=1)
+    submit(higgs, respx_mock, THIRD_ID, endpoint="kling-video/v3.0-turbo/image-to-video")
+
+    result = higgs("list", "--model", model, "--json")
+
+    assert result.exit_code == 0, result.output
+    assert [item["request_id"] for item in json.loads(result.output)["requests"]] == [REQUEST_ID, OTHER_ID]
+
+
 def test_sync_downloads_completed_requests_and_reports_the_running_ones(higgs, project, api_key, respx_mock):
     submit(higgs, respx_mock, REQUEST_ID, prompt="Sunset beach")
     submit(higgs, respx_mock, OTHER_ID, prompt="Waves")
