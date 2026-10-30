@@ -7,11 +7,13 @@ HTTP is replaced at the transport level with respx in the tests that need it.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+import hfcore.clock
 from hfcli.app import app
 
 
@@ -54,6 +56,27 @@ def project(higgs, projects_root: Path, monkeypatch) -> Path:
     path = projects_root / "demo"
     monkeypatch.chdir(path)
     return path
+
+
+class FakeClock:
+    """The core's clock (`hfcore.clock.now`), frozen until a test moves it forward."""
+
+    def __init__(self, start: datetime):
+        self.current = start
+
+    def now(self) -> datetime:
+        return self.current
+
+    def advance(self, **delta: float) -> None:
+        self.current += timedelta(**delta)
+
+
+@pytest.fixture
+def clock(monkeypatch) -> FakeClock:
+    """Freeze the core's clock at 2026-10-30 12:00 UTC."""
+    fake = FakeClock(datetime(2026, 10, 30, 12, 0, tzinfo=UTC))
+    monkeypatch.setattr(hfcore.clock, "now", fake.now)
+    return fake
 
 
 @pytest.fixture

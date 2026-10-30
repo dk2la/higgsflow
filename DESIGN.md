@@ -195,7 +195,13 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 1. Validate parameters against the catalog schema.
 2. Local files (`inputs/a.jpg`, `@hero`) are uploaded automatically:
    `POST /files/generate-upload-url` → `PUT` with `upload_headers` → `public_url`.
-   Cached by sha256 for 7 days (the API deletes uploads after 7 days).
+   Cached by sha256 for 7 days (the API deletes uploads after 7 days); an entry is reused while
+   more than an hour of it is left. A string parameter value (also inside lists and objects) is a
+   local file when it names an existing file (relative to the current directory, or absolute) or
+   ends in an allowed media extension (`.jpg`, `.png`, `.mp4`, …; then a missing file is an error);
+   URLs never are. The type is judged by the file's content, not its name. Every file is checked
+   (projects root, type) before the first upload. The Request record lists its Inputs
+   (`param`, `source`, `path`, `sha256`, `content_type`, `public_url`).
 3. Exact price: `POST /estimate/{endpoint}` with the same body → `{"usd": "..."}`.
    Display, confirmation (`--yes` skips it), project `budget` check. Project spend is the sum of the
    estimated prices of `completed` Requests (failed/nsfw/canceled are not billed). If spend + this price

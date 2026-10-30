@@ -7,6 +7,7 @@ is a short method: pick the method and path, and parse the body into an `ApiMode
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Self
 
 import httpx
@@ -17,6 +18,8 @@ from hfcore.errors import HiggsError
 
 BASE_URL = "https://api.higgsfield.ai"
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+# A video Input may be up to a few hundred MiB; allow a slow uplink between chunks.
+UPLOAD_TIMEOUT = httpx.Timeout(300.0, connect=10.0)
 
 
 class ApiModel(BaseModel):
@@ -35,6 +38,15 @@ class Submitted(ApiModel):
     status_url: str | None = None
     cancel_url: str | None = None
     expires_after: int | None = None
+
+
+class UploadTarget(ApiModel):
+    """Where to `PUT` one file (`POST /files/generate-upload-url`), and its URL afterwards."""
+
+    public_url: str
+    upload_url: str
+    content_type: str | None = None
+    upload_headers: dict[str, str] = {}
 
 
 class ApiClient:
@@ -59,6 +71,34 @@ class ApiClient:
             "POST", f"/{endpoint}", json=params, headers={"Idempotency-Key": idempotency_key}
         )
         return _parse(Submitted, response)
+
+    def create_upload(self, content_type: str) -> UploadTarget:
+        """Get a presigned upload URL for one file (`POST /files/generate-upload-url`)."""
+        response = self._call("POST", "/files/generate-upload-url", json={"content_type": content_type})
+        return _parse(UploadTarget, response)
+
+    def put_file(self, target: UploadTarget, path: Path, *, content_type: str) -> None:
+        """Send a file to its presigned URL with the headers the API asked for.
+
+        A separate client on purpose: the API key must never reach the storage host.
+        The file is streamed with a `Content-Length` (presigned PUTs reject chunked bodies).
+        """
+        headers = target.upload_headers or {"Content-Type": content_type}
+        try:
+            with httpx.Client(timeout=UPLOAD_TIMEOUT) as http, path.open("rb") as file:
+                response = http.put(target.upload_url, content=file, headers=headers)
+        except httpx.TransportError as error:
+            raise HiggsError(
+                f"Cannot upload {path.name}: {error}",
+                hint="Check the network connection and try again.",
+                code="network_error",
+            ) from None
+        if response.is_error:
+            raise HiggsError(
+                f"Uploading {path.name} failed (HTTP {response.status_code}): {response.text.strip()[:200]}",
+                hint="Try again; a new upload URL is requested every time.",
+                code="upload_failed",
+            )
 
     def _call(
         self,

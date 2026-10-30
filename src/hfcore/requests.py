@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from hfcore.errors import HiggsError
+from hfcore.inputs import Input
 from hfcore.projects import Project
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "nsfw", "canceled"})
@@ -31,7 +32,10 @@ class RequestRecord(BaseModel):
 
     request_id: str
     endpoint: str
+    # As sent: every local Input already replaced by its `public_url`.
     params: dict[str, Any]
+    # The local files behind those URLs (`hfcore.inputs`).
+    inputs: list[Input] = []
     prompt: str | None = None
     status: str
     submitted_at: datetime
