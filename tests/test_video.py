@@ -428,6 +428,57 @@ def test_count_waits_for_and_downloads_every_request(higgs, project, api_key, re
     ]
 
 
+def test_a_failed_request_fails_the_command_after_the_others_are_downloaded(
+    higgs, project, api_key, respx_mock, estimate
+):
+    mock_submit(respx_mock, WAN_T2V)
+    respx_mock.get(f"{API}/requests/req-1/status").mock(
+        return_value=httpx.Response(200, json={"status": "failed", "request_id": "req-1", "error": "Generation failed"})
+    )
+    respx_mock.get(f"{API}/requests/req-2/status").mock(
+        return_value=httpx.Response(
+            200, json={"status": "completed", "request_id": "req-2", "video": {"url": "https://cdn.example.com/2.mp4"}}
+        )
+    )
+    respx_mock.get("https://cdn.example.com/2.mp4").mock(return_value=httpx.Response(200, content=b"mp4-2"))
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--name", "waves", "--count", "2", "--yes")
+
+    assert result.exit_code == 1
+    output = " ".join(result.output.split())
+    assert "Completed Request req-2" in output
+    assert "Request req-1 failed: Generation failed" in output
+    day = project / "generations" / "2026-10-30"
+    assert (day / "20261030-1200_wan-2-7_t2v_waves_v02.mp4").read_bytes() == b"mp4-2"
+    assert json.loads((project / ".hf" / "requests" / "req-1.json").read_text())["status"] == "failed"
+
+
+def test_p_parameters_reach_the_body_and_win_over_flags(higgs, project, api_key, respx_mock, estimate):
+    route = mock_submit(respx_mock, "kling-video/v2.6/pro/text-to-video")
+
+    result = video(
+        higgs, "t2v", "--model", "kling-2.6", "--prompt", "Waves", "--aspect", "9:16",
+        "-p", "sound=off", "-p", "aspect_ratio=1:1", "--no-wait", "--json", "--yes",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Waves", "sound": "off", "aspect_ratio": "1:1"}
+
+
+def test_an_image_can_be_a_reference(higgs, project, api_key, respx_mock, estimate):
+    (project / "references" / "hero.jpg").write_bytes(JPEG)
+    mock_uploads(respx_mock)
+    route = mock_submit(respx_mock, "kling-video/v2.6/pro/image-to-video")
+
+    result = video(
+        higgs, "i2v", "--model", "kling-2.6", "--prompt", "Hero waves", "--image", "@hero", "--no-wait", "--json", "--yes"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "Hero waves", "image_url": "https://cdn.example.com/upload-1"}
+    assert json.loads(result.output)[0]["record"]["inputs"][0]["source"] == "@hero"
+
+
 def test_a_flag_the_endpoint_has_no_parameter_for_fails_before_any_call(higgs, project, api_key, respx_mock, images):
     result = video(
         higgs, "i2v", "--model", "kling-2.6", "--prompt", "She turns around",
