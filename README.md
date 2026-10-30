@@ -42,6 +42,10 @@ higgs video t2v --model kling-3.0 --quality pro --duration 5 --aspect 16:9 --pro
                                  # picks the Endpoint from Model + Mode (+ tier) and maps the flags onto it
 higgs video i2v -m kling-o3 -q pro --image inputs/first.jpg --end-image @hero --prompt-file prompts/turn.md
 higgs video t2v -m wan-2.7 --prompt "Waves at dusk" --count 3 --seed 7   # 3 Requests, seeds 7, 8, 9
+higgs image t2i -m soul-v2 -q 1080p --aspect 3:4 --prompt "Editorial portrait" -p batch_size=4
+                                 # one Request, four Generations: ..._v01-1.png ... _v01-4.png
+higgs image t2i -m grok-image-2.0 --image @hero --image inputs/style.png --prompt "Hero in this style"
+higgs image i2i -m qwen-image-3 --image inputs/street.jpg --prompt "Make it night, wet asphalt"
 higgs gen higgsfield-ai/soul/v2/standard -p prompt="Editorial portrait" -p batch_size=4
                                  # validates, submits a Request, waits for it and downloads the Generations
 higgs gen bytedance/seedance-2.0/text-to-video -p prompt="Waves at dusk" --name sunset-beach \
@@ -99,7 +103,7 @@ directory). The body is then validated, priced, confirmed and submitted exactly 
 `--name`, `--no-wait`, `--yes`, `--no-input`, `--json` and `--project` work the same way.
 
 What is not given comes from `project.toml`; `[defaults.video]` wins over the shared `[defaults]` (which
-`higgs image` will share). A default the Endpoint does not accept is skipped, not an error (e.g. `aspect` for
+`higgs image` shares, with its own `[defaults.image]`). A default the Endpoint does not accept is skipped, not an error (e.g. `aspect` for
 Hailuo 2.3, which has no aspect ratio, or `duration = 5` for a Model of 6 or 10 seconds), and a default Model
 without the Mode counts as no default:
 
@@ -125,6 +129,37 @@ random seeds in the seed's range (a single Request without `--seed` sends none).
 stays an ordinary `-p` parameter. Without `--no-wait` every Request is waited for and downloaded; one that
 fails fails the command after the others are downloaded. `--json` always prints a list, one object per Request
 (`request_id`, `path`, `record`, `generations` once downloaded, `warnings`), even for one Request.
+
+### Images: `higgs image t2i|i2i`
+
+`higgs image <mode>` works like `higgs video <mode>`, with the same `--model`, `--prompt`/`--prompt-file`,
+`--aspect`, `--quality`, `--seed`, `--name`, `--count`, `-p`, `--no-wait`, `--yes`, `--no-input`, `--json` and
+`--project`. `t2i` covers every text-to-image Model (SOUL, SOUL V2, SOUL Cinema, Marketing Studio Image,
+Grok Image 2.0, Recraft V4.1, Qwen Image 3, Ideogram v4, Z-Image Turbo), including those that also take
+reference images; `i2i` is Qwen Image 3 edit. Ads Studio is only reachable with `higgs gen`.
+
+| Flag | Parameter (first one the Endpoint has) |
+|---|---|
+| `--image` (repeatable) | `image_urls` (Grok, Marketing Studio, Qwen edit: every `--image`), `image_url` (Ideogram), `image_reference_url` (SOUL): one image |
+| `--aspect` | `aspect_ratio` |
+| `--quality` | `resolution` (`1k`, `2k`, `4k`, `720p`, `1080p`), `quality` (`low` … `max`), `rendering_speed` (Ideogram: `turbo`, `default`, `quality`), whichever allows the value |
+| `--seed` | `seed` (SOUL, Qwen Image 3, Z-Image Turbo) |
+
+`--image` takes a file in the Project or a Reference (`@hero`), uploaded like any Input; giving it twice to a
+Model that takes one image fails before anything is sent (`too_many_values`). Grok and Marketing Studio
+have both `quality` and `resolution`: `--quality` sets the one whose values match, the other goes in `-p`
+(`-q high -p resolution=4k`). `[defaults.image]` wins over `[defaults]`:
+
+```toml
+[defaults.image]
+model = "soul-v2"
+quality = "1080p"
+aspect = "3:4"
+```
+
+A Model's own `batch_size` (SOUL: 1 or 4) is an ordinary `-p` parameter: one Request whose Generations are
+numbered `..._v01-1.png`, `..._v01-2.png`, ... . It combines with `--count`: `--count 2 -p batch_size=4`
+submits two Requests (`v01`, `v02`, one price confirmation), each with four Generations (`v01-1` … `v02-4`).
 
 `higgs pick <generation>` takes a path or just the file name (looked up under `generations/`) and copies
 the Generation with its `.json` and all its Artifacts into `final/` under the same names, as real copies

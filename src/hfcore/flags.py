@@ -1,6 +1,6 @@
 """The convenience layer's common flags and how they map onto an Endpoint (DESIGN.md §7).
 
-`higgs video` (and later `higgs image`) take the same flags for every Model; each Endpoint
+`higgs video` and `higgs image` take the same flags for every Model; each Endpoint
 names the matching parameters its own way. `FLAGS` is the alias table: for each flag, the
 parameter names that may carry it, most specific first. `map_flags` picks, per flag, the
 first of them the Endpoint has, whose allowed values (if it lists any) accept the value,
@@ -11,6 +11,12 @@ To support a new flag (`--video`, `--audio`, `--ref`, ...), add a `Flag` here an
 option to the command; to support a new parameter spelling, add it to that flag's
 `params`. `--quality` is special: for a Model with quality tiers in the Mode
 (`Catalog.tiers`) it picks the tier and is not mapped; otherwise it maps like any other flag.
+A repeatable flag (`higgs image --image a.jpg --image b.png`) has a list value: an array
+parameter takes it as it is, a single-value parameter only a one-item list.
+
+A flag whose value is a name to look up (`--soul <name>` → the Soul ID's
+`custom_reference_id`, `--preset <name>`) is still a `Flag` here, with the parameters it
+may land in; the command layer swaps the name for the looked-up value before `map_flags`.
 """
 
 from __future__ import annotations

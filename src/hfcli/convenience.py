@@ -1,4 +1,4 @@
-"""The convenience layer behind `higgs video ...` (and `higgs image ...`): common flags → one Endpoint's Requests.
+"""The convenience layer behind `higgs video ...` and `higgs image ...`: common flags → one Endpoint's Requests.
 
 A convenience command declares its options with the `...Opt` aliases below, collects the
 common flags into a dict keyed like `hfcore.flags.FLAGS` (only the flags it offers; a
@@ -15,7 +15,10 @@ flag left out of the dict is never asked for) and calls `generate` with its kind
    `hfcli.pipeline.run_requests`.
 
 A new flag is an entry in `hfcore.flags.FLAGS`, an `...Opt` alias here and an option on
-the commands that offer it.
+the commands that offer it. A flag that names something to look up (`--soul <name>`:
+`souls.toml` → `custom_reference_id`, checked against the SOUL Model; `--preset <name>`)
+is resolved between steps 2 and 3, once the Endpoint is known, by replacing the name in
+`flags` with the looked-up value; from there on it maps like any other flag.
 """
 
 from __future__ import annotations
