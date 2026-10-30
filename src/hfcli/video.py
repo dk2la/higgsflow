@@ -1,4 +1,8 @@
-"""`higgs video <mode>`: video Requests with the common flags (DESIGN.md §7)."""
+"""`higgs video <mode>`: video Requests with the common flags (DESIGN.md §7).
+
+Each Mode is a thin command: it declares the options that make sense for the Mode and
+passes them to `hfcli.convenience.generate` as flags keyed like `hfcore.flags.FLAGS`.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ import typer
 
 from hfcli.convenience import (
     AspectOpt,
+    CountOpt,
     DurationOpt,
     EndImageOpt,
     ImageOpt,
@@ -16,6 +21,7 @@ from hfcli.convenience import (
     PromptFileOpt,
     PromptOpt,
     QualityOpt,
+    SeedOpt,
     generate,
 )
 from hfcli.output import JsonOpt, NoInputOpt, YesOpt
@@ -33,7 +39,9 @@ def t2v(
     aspect: AspectOpt = None,
     prompt: PromptOpt = None,
     prompt_file: PromptFileOpt = None,
+    seed: SeedOpt = None,
     name: NameOpt = None,
+    count: CountOpt = 1,
     param: ParamOpt = None,
     no_wait: NoWaitOpt = False,
     project: ProjectOpt = None,
@@ -47,10 +55,11 @@ def t2v(
         kind="video",
         mode="t2v",
         model=model,
-        flags={"prompt": prompt, "quality": quality, "duration": duration, "aspect": aspect},
+        flags={"prompt": prompt, "quality": quality, "duration": duration, "aspect": aspect, "seed": seed},
         prompt_file=prompt_file,
         params=param,
         name=name,
+        count=count,
         project=project,
         yes=yes,
         no_wait=no_wait,
@@ -69,7 +78,9 @@ def i2v(
     aspect: AspectOpt = None,
     prompt: PromptOpt = None,
     prompt_file: PromptFileOpt = None,
+    seed: SeedOpt = None,
     name: NameOpt = None,
+    count: CountOpt = 1,
     param: ParamOpt = None,
     no_wait: NoWaitOpt = False,
     project: ProjectOpt = None,
@@ -90,10 +101,12 @@ def i2v(
             "quality": quality,
             "duration": duration,
             "aspect": aspect,
+            "seed": seed,
         },
         prompt_file=prompt_file,
         params=param,
         name=name,
+        count=count,
         project=project,
         yes=yes,
         no_wait=no_wait,

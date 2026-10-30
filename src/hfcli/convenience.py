@@ -50,6 +50,18 @@ ParamOpt = Annotated[
     list[str] | None,
     typer.Option("--param", "-p", help="Any other Endpoint parameter as key=value (applied last, like in higgs gen)."),
 ]
+SeedOpt = Annotated[
+    int | None, typer.Option("--seed", help="Seed; with --count N the Requests get this seed, +1, +2, ...")
+]
+CountOpt = Annotated[
+    int,
+    typer.Option(
+        "--count",
+        "-n",
+        min=1,
+        help="Submit N separate Requests (a different seed each, where the Model has seeds); the price is confirmed once.",
+    ),
+]
 NoWaitOpt = Annotated[bool, typer.Option("--no-wait", help="Return the request ids right after submitting.")]
 
 
@@ -63,6 +75,7 @@ def generate(
     prompt_file: str | None,
     params: list[str] | None,
     name: str | None,
+    count: int,
     project: str | None,
     yes: bool,
     no_wait: bool,
@@ -86,7 +99,8 @@ def generate(
         question = flag.option.removeprefix("--").replace("-", " ").capitalize()
         flags[key] = ask(ctx, question, flag=flag.option, choices=options)
     body = {**common_flags.map_flags(endpoint, flags), **extra}
-    batch = run_requests(ctx, target, endpoint.id, [body], name=name, yes=yes, no_wait=no_wait, quiet=as_json)
+    bodies = common_flags.vary_seeds(endpoint, body, count)
+    batch = run_requests(ctx, target, endpoint.id, bodies, name=name, yes=yes, no_wait=no_wait, quiet=as_json)
     if as_json:
         batch.raise_unfinished()
         print_json([result_json(result, batch.warnings) for result in batch.results])

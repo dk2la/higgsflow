@@ -15,6 +15,7 @@ option to the command; to support a new parameter spelling, add it to that flag'
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from typing import Any
 
@@ -96,6 +97,27 @@ def choices(endpoint: Endpoint, key: str) -> list[str] | None:
     if parameter is None or parameter.enum is None:
         return None
     return [str(value) for value in parameter.enum]
+
+
+def vary_seeds(endpoint: Endpoint, body: dict[str, Any], count: int) -> list[dict[str, Any]]:
+    """The bodies of `count` Requests (`--count N`) made from one body.
+
+    Where the Endpoint has a `seed`, each Request gets its own: counting up from the seed
+    in the body (`--seed 7` → 7, 8, 9), or else distinct random seeds within the seed's
+    range (a single Request without a seed is left to the Endpoint). Without a seed the
+    Requests share the body.
+    """
+    parameter = flag_parameter(endpoint, "seed")
+    if parameter is None or (count == 1 and parameter.name not in body):
+        return [dict(body) for _ in range(count)]
+    start = body.get(parameter.name)
+    if isinstance(start, int) and not isinstance(start, bool):
+        seeds = [start + index for index in range(count)]
+    else:
+        low = max(int(parameter.minimum or 0), 0)
+        high = int(parameter.maximum) if parameter.maximum is not None else 2**31 - 1
+        seeds = random.sample(range(low, high + 1), count)
+    return [{**body, parameter.name: seed} for seed in seeds]
 
 
 def project_defaults(defaults: dict[str, Any], kind: str) -> dict[str, Any]:

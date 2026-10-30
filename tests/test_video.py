@@ -5,6 +5,7 @@ Expected Endpoint ids and parameter names come from the docs (via `catalog.json`
 
 import itertools
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -327,6 +328,104 @@ def test_a_prompt_file_that_cannot_be_used_fails_before_any_call(higgs, project,
     assert result.exit_code == 1
     assert json.loads(result.output)["error"]["code"] == code
     assert not respx_mock.calls
+
+
+WAN_T2V = "wan/v2.7/text-to-video"  # has a seed of 1 to 2147483646
+
+
+def test_count_submits_separate_requests_with_one_confirmation_and_different_seeds(
+    higgs, project, api_key, respx_mock, estimate
+):
+    route = mock_submit(respx_mock, WAN_T2V)
+    first = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--name", "waves", "--count", "3",
+                  "--no-wait", "--json", "--yes")
+    assert first.exit_code == 0, first.output
+    estimated = len(estimate.calls)
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--name", "waves", "--count", "3",
+                   "--no-wait", input="y\n")
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Submit 3 Requests for $0.282?") == 1
+    assert len(estimate.calls) - estimated == 3
+    bodies = [body(route, index) for index in (3, 4, 5)]
+    seeds = [sent.pop("seed") for sent in bodies]
+    assert len(set(seeds)) == 3
+    assert all(1 <= seed <= 2147483646 for seed in seeds)
+    assert bodies == [{"prompt": "Waves"}] * 3
+    records = [json.loads((project / ".hf" / "requests" / f"req-{n}.json").read_text()) for n in (4, 5, 6)]
+    assert [record["naming"]["version"] for record in records] == [4, 5, 6]
+    for n in (4, 5, 6):
+        assert f"Submitted Request req-{n}" in result.output
+
+
+def test_count_with_a_seed_counts_up_from_it(higgs, project, api_key, respx_mock, estimate):
+    route = mock_submit(respx_mock, WAN_T2V)
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--seed", "7", "--count", "3",
+                   "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert [body(route, index)["seed"] for index in range(3)] == [7, 8, 9]
+    assert [item["request_id"] for item in json.loads(result.output)] == ["req-1", "req-2", "req-3"]
+
+
+def test_a_single_request_sends_a_seed_only_when_given(higgs, project, api_key, respx_mock, estimate):
+    route = mock_submit(respx_mock, WAN_T2V)
+
+    video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--no-wait", "--json", "--yes")
+    video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--seed", "42", "--no-wait", "--json", "--yes")
+
+    assert body(route, 0) == {"prompt": "Waves"}
+    assert body(route, 1) == {"prompt": "Waves", "seed": 42}
+
+
+def test_count_on_a_model_without_seeds_repeats_the_same_body(higgs, project, api_key, respx_mock, estimate):
+    route = mock_submit(respx_mock, "bytedance/seedance-2.0/text-to-video")
+
+    result = video(higgs, "t2v", "--model", "seedance-2.0", "--prompt", "Waves", "--count", "2",
+                   "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert [body(route, index) for index in range(2)] == [{"prompt": "Waves"}] * 2
+
+    result = video(higgs, "t2v", "--model", "seedance-2.0", "--prompt", "Waves", "--seed", "7", "--json", "--yes")
+    assert json.loads(result.output)["error"]["code"] == "unsupported_flag"
+
+
+def test_count_waits_for_and_downloads_every_request(higgs, project, api_key, respx_mock, estimate):
+    mock_submit(respx_mock, WAN_T2V)
+
+    def completed(request: httpx.Request) -> httpx.Response:
+        request_id = request.url.path.split("/")[2]
+        # A completed video Request ("Requests and lifecycle" → Completed response).
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "request_id": request_id,
+                "video": {"url": f"https://cdn.example.com/{request_id}.mp4"},
+            },
+        )
+
+    respx_mock.get(url__regex=rf"{API}/requests/req-\d+/status").mock(side_effect=completed)
+    respx_mock.get(url__regex=r"https://cdn.example.com/req-\d+.mp4").mock(
+        side_effect=lambda request: httpx.Response(200, content=request.url.path.encode())
+    )
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--name", "waves", "--count", "2",
+                   "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    output = json.loads(result.output)
+    assert [item["record"]["status"] for item in output] == ["completed", "completed"]
+    day = project / "generations" / "2026-10-30"
+    assert (day / "20261030-1200_wan-2-7_t2v_waves_v01.mp4").read_bytes() == b"/req-1.mp4"
+    assert (day / "20261030-1200_wan-2-7_t2v_waves_v02.mp4").read_bytes() == b"/req-2.mp4"
+    assert [Path(item["generations"][0]["path"]).name for item in output] == [
+        "20261030-1200_wan-2-7_t2v_waves_v01.mp4",
+        "20261030-1200_wan-2-7_t2v_waves_v02.mp4",
+    ]
 
 
 def test_a_flag_the_endpoint_has_no_parameter_for_fails_before_any_call(higgs, project, api_key, respx_mock, images):
