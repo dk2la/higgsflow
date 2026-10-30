@@ -40,8 +40,9 @@ FLAGS: dict[str, Flag] = {
         Flag("end_image", "--end-image", ("end_image_url", "last_image_url", "last_frame_url", "tail_image_url")),
         Flag("duration", "--duration", ("duration",)),
         Flag("aspect", "--aspect", ("aspect_ratio",)),
-        # Kling O3/Omni `mode` (std|pro|4k), else `resolution` (720p, 1080p, ...); image Models also have `quality`.
-        Flag("quality", "--quality", ("mode", "resolution", "quality")),
+        # Kling O3/Omni `mode` (std|pro|4k), else `resolution` (720p, 1080p, ...); image Models also have
+        # `quality` (Grok, Marketing Studio: low|medium|high...) and Ideogram's `rendering_speed` (turbo|quality).
+        Flag("quality", "--quality", ("mode", "resolution", "quality", "rendering_speed")),
         Flag("seed", "--seed", ("seed",)),
         # `higgs image`'s repeatable `--image`: the input/reference images (a list). Kept apart from
         # video's `image` (the start frame); a single-image parameter takes a one-item list.

@@ -125,3 +125,26 @@ def test_image_maps_the_input_images_per_model(
     assert body(route) == {"prompt": "In this style", **expected}
     record = json.loads(result.output)[0]["record"]
     assert [item["source"] for item in record["inputs"]] == values
+
+
+# (model, endpoint, --quality, expected body): each Model names its quality its own way.
+QUALITY_MAPPINGS = [
+    ("grok-image-2.0", "xai/grok-imagine-image-2.0", "medium", {"quality": "medium"}),
+    ("grok-image-2.0", "xai/grok-imagine-image-2.0", "2k", {"resolution": "2k"}),
+    ("marketing-studio-image-2.5-sunburst", "marketing-studio/image/sunburst", "xhigh", {"quality": "xhigh"}),
+    ("marketing-studio-image-2.5-sunburst", "marketing-studio/image/sunburst", "4K", {"resolution": "4k"}),
+    ("soul-cinema", "higgsfield-ai/soul/cinema", "1080p", {"resolution": "1080p"}),
+    ("ideogram-4.0", "ideogram/v4.0", "turbo", {"rendering_speed": "TURBO"}),
+]
+
+
+@pytest.mark.parametrize(("model", "endpoint", "quality", "expected"), QUALITY_MAPPINGS)
+def test_quality_maps_onto_the_quality_resolution_or_rendering_speed_of_the_model(
+    higgs, project, api_key, respx_mock, estimate, model, endpoint, quality, expected
+):
+    route = mock_submit(respx_mock, endpoint)
+
+    result = image(higgs, "t2i", "-m", model, "--prompt", "A lighthouse", "-q", quality, "--no-wait", "--json", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert body(route) == {"prompt": "A lighthouse", **expected}
