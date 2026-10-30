@@ -10,6 +10,8 @@ from typing import Any
 import httpx
 import respx
 
+from hfcore.catalog.loader import load_baked_in
+
 API = "https://api.higgsfield.ai"
 
 # GET /models/higgsfield/genjutsu/restyle/v1.0/presets, the docs' example ("Available styles").
@@ -176,6 +178,29 @@ def test_presets_list_marketing_follows_the_pages_and_shows_group_and_aspect(hig
             "models": MARKETING_MODELS,
         },
     ]
+
+
+def test_every_model_with_a_preset_parameter_is_in_a_preset_catalog(higgs, api_key, respx_mock):
+    # The docs' schemas (catalog.json) say which Endpoints take a style_id or preset_id.
+    expected = {
+        endpoint.model
+        for endpoint in load_baked_in().endpoints
+        if any(parameter.name in ("style_id", "preset_id") for parameter in endpoint.parameters)
+    }
+    mock_soul_styles(respx_mock)
+    respx_mock.get(f"{API}/models/higgsfield/genjutsu/restyle/v1.0/presets").mock(
+        return_value=httpx.Response(200, json=RESTYLE_PRESETS)
+    )
+    mock_marketing_presets(respx_mock, [MARKETING_PRESET])
+
+    listed = {
+        model
+        for name in ("soul-styles", "restyle", "marketing")
+        for preset in presets(higgs, name)["presets"]
+        for model in preset["models"]
+    }
+
+    assert listed == expected
 
 
 def test_presets_list_without_json_shows_a_table_of_names_and_ids(higgs, api_key, respx_mock):
