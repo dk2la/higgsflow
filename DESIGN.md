@@ -138,6 +138,32 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
   (types, enum, min/max, default, required), prompt constraints (length, negative prompt,
   tokens like `<<<image_1>>>`), an approximate "from $/sec" price from the pricing page.
 - Every request is validated against the schema before submission.
+- **Build.** Snapshots live in `catalog/`: `llms-full.txt` (the docs) and `pricing.json` (the pricing
+  page's data, `dash.higgsfield.ai/api/v2/pricing/models/`). `scripts/dev catalog`
+  (`python -m hfcore.catalog.build`) turns them into `src/hfcore/catalog/catalog.json`, the package
+  data loaded through `hfcore.catalog.load_catalog(config_dir)`; a test fails if the committed
+  `catalog.json` is not the build of the committed snapshots. As of 2026-10-30: 83 generation
+  Endpoints (67 video, 16 image; the docs' 17th image entry is Soul ID training, not a catalog
+  Endpoint), 38 Models, 18 Families.
+- **Identifiers.** Model slug = the docs model name lowercased, non-alphanumerics → `-`, dots kept:
+  `kling-3.0`, `kling-3.0-turbo`, `seedance-2.5`, `soul-v2`, `recraft-v4.1-pro`. Family = the brand
+  (`kling`, `seedance`, `wan`, `happy-horse`, `soul`, …). A Model is a docs model page, except that
+  Kling 3.0 Turbo (own path `kling-video/v3.0-turbo/...`) and the three Marketing Studio Image
+  versions (2.0 Alpha, 2.5 Flare, 2.5 Sunburst) are separate Models.
+- **Modes.** Video: `t2v`, `i2v` (incl. first/last frame), `ref` (reference-to-video, Kling image
+  reference, Cinema Studio), `vref` (Kling O3/Omni video reference), `edit` (video edit, Genjutsu
+  object swap), `extend`, `motion` (Kling Motion Control, Genjutsu motion transfer), `restyle`
+  (Genjutsu restyle). Image: `t2i` (incl. models that also edit with optional image references),
+  `i2i` (Qwen Image 3 edit), `ads` (Ads Studio, reachable via `higgs gen` only).
+- **Quality tiers.** Where the docs give one Model several paths for one Mode that differ only in a
+  tier segment (`std`/`standard`, `pro`, `4k`, `fast`: Kling 2.5 Turbo, Kling 3.0, Kling Motion
+  Control 2.6/3.0, LTX-2.5), the tier is a quality variant of the same Model, not a separate Model:
+  Model + Mode + tier = one Endpoint, and `--quality` (#16) picks the tier the way it picks
+  `resolution` or Kling O3's `mode` parameter elsewhere. A tier is recorded only when the Model has
+  more than one (Kling 2.6 is all `pro`, so it has none).
+- **Prices** are the pricing page's "from" price per Endpoint (USD per second or per image,
+  `exact` when it does not vary); a Model's price is the lowest of its Endpoints. Missing for
+  Genjutsu Restyle and SOUL Cinema. The exact price always comes from `/estimate`.
 - **Models not in the docs** (e.g. Kling 4.0, Genjutsu Light from the pricing page):
   1. raw call `higgs gen <endpoint-id> -p k=v --no-validate` — works for any path,
      since the API is uniform (`POST /{endpoint}` → `request_id` → the same polling);

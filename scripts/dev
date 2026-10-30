@@ -3,6 +3,7 @@
 #   scripts/dev test [pytest args]   run the test suite
 #   scripts/dev typecheck            run mypy
 #   scripts/dev shell                open a shell in the dev container
+#   scripts/dev catalog              rebuild src/hfcore/catalog/catalog.json from catalog/
 set -euo pipefail
 
 # shellcheck source=bin/lib.sh
@@ -24,5 +25,6 @@ case "$command" in
   test) run pytest "$@" ;;
   typecheck) run mypy "$@" ;;
   shell) run bash "$@" ;;
-  *) echo "usage: scripts/dev {test|typecheck|shell} [args]" >&2; exit 2 ;;
+  catalog) run python -m hfcore.catalog.build "$@" ;;
+  *) echo "usage: scripts/dev {test|typecheck|shell|catalog} [args]" >&2; exit 2 ;;
 esac
