@@ -47,7 +47,9 @@ Without `--no-wait`, `higgs gen` polls the Request (2 s backing off to 10 s, wai
 retrying transient errors) and downloads every Generation and Artifact into `generations/YYYY-MM-DD/` as
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN[-N].<ext>`, each with a `<file>.json` describing how it was
 made. `<slug>` is `--name` or the first words of the prompt; `vNN` counts the Project's Requests with that
-slug. For a raw `gen` the model slug and Mode come from the Endpoint id (see DESIGN.md §5). A failed, nsfw
+slug. The model slug and Mode come from the catalog, with the quality tier when the Endpoint has one
+(`kling-video/v3.0/pro/image-to-video` → `kling-3-0-pro_i2v`); for an Endpoint the catalog lacks they come
+from the Endpoint id (see DESIGN.md §5). A failed, nsfw
 or canceled Request ends with an error and downloads nothing.
 
 `higgs pick <generation>` takes a path or just the file name (looked up under `generations/`) and copies

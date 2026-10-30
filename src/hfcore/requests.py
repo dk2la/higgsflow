@@ -14,7 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from hfcore import naming
+from hfcore import config, naming
+from hfcore.catalog import load_catalog
 from hfcore.errors import HiggsError
 from hfcore.inputs import Input
 from hfcore.naming import Naming
@@ -95,8 +96,12 @@ def list_requests(project: Project) -> list[RequestRecord]:
 
 
 def new_naming(project: Project, endpoint: str, *, prompt: str | None, name: str | None) -> Naming:
-    """The naming of a new Request: `vNN` counts this slug across all the Project's Requests."""
-    model_slug, mode = naming.model_and_mode(endpoint)
+    """The naming of a new Request: `vNN` counts this slug across all the Project's Requests.
+
+    The model slug and Mode come from the effective catalog when it has the Endpoint, else
+    from the Endpoint id (`naming.model_and_mode`).
+    """
+    model_slug, mode = naming.model_and_mode(endpoint, load_catalog(config.config_dir()))
     slug = naming.request_slug(name, prompt)
     version = naming.next_version((record.naming for record in list_requests(project)), slug)
     return Naming(model_slug=model_slug, mode=mode, slug=slug, version=version)

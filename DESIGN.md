@@ -124,7 +124,12 @@ Outside a project, project-scoped commands fail with a hint to run `higgs init` 
 
 **Generation naming:**
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN.<ext>`,
-e.g. `20261030-1412_kling-3-0_i2v_sunset-beach_v02.mp4`.
+e.g. `20261030-1412_kling-3-0-pro_i2v_sunset-beach_v02.mp4` (Kling 3.0 Pro, `kling-video/v3.0/pro/image-to-video`)
+or `20261030-1412_soul-v2_t2i_editorial-portrait_v01.png` (SOUL V2, no tiers).
+`<model-slug>` is the catalog's Model slug, slugified (`kling-3.0` → `kling-3-0`), followed by the
+Endpoint's quality tier when it has one (`-std`, `-pro`, `-4k`, `-fast`): tiers differ in price and
+quality, so two tiers of one idea must be told apart by name. `<mode>` is the Endpoint's Mode from the
+catalog.
 `<slug>` — from `--name` or from the first words of the prompt; `vNN` — the iteration number of
 this idea: a counter of Requests with the same `<slug>` across the whole project, regardless
 of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday with another model).
@@ -139,12 +144,13 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
   `.json` lists them; a Request that returns artifacts only (e.g. a 3D scene) has them as its Generations.
 - The model slug, Mode, slug and `vNN` are fixed when the Request is submitted and stored in its record
   (`naming`), so a later `sync`/`download` gives the same names. Timestamps are in local time.
-- For a raw `higgs gen` (no catalog) they come from the Endpoint id: the first path segment that names a
+- For an Endpoint the effective catalog does not have (a raw `higgs gen --no-validate` to a Model not in
+  the docs yet) they come from the Endpoint id: the first path segment that names a
   Mode is the Mode (`text-to-video` → `t2v`, `image-to-video`/`first-last-frame` → `i2v`,
   `reference-to-video`/`image-reference`/`video-reference` → `ref`, `edit`/`video-edit` → `edit`,
   `video-extend` → `extend`, `motion-control`/`motion-transfer` → `motion`, `text-to-image` → `t2i`;
   none → `gen`), and the remaining segments, slugified, are the model slug:
-  `kling-video/v3.0/pro/image-to-video` → `kling-video-v3-0-pro` + `i2v`. Without `--name` or a prompt
+  `kling-video/v4.0/pro/image-to-video` → `kling-video-v4-0-pro` + `i2v`. Without `--name` or a prompt
   the slug is `untitled`.
 
 ## 6. Model catalog
