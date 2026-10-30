@@ -67,13 +67,26 @@ def no_input(ctx: typer.Context) -> bool:
     return json_mode(ctx) or bool(ctx.meta.get(_NO_INPUT_KEY))
 
 
-def ask(ctx: typer.Context, question: str, *, flag: str, hide_input: bool = False) -> str:
-    """Prompt for a missing value; with no input (`--no-input`, `--json`) fail instead."""
+def ask(
+    ctx: typer.Context,
+    question: str,
+    *,
+    flag: str,
+    hide_input: bool = False,
+    choices: list[str] | None = None,
+) -> str:
+    """Prompt for a missing value (one of `choices`, when given); with no input (`--no-input`, `--json`) fail instead."""
     if no_input(ctx):
-        raise HiggsError(
-            f"Missing {flag}", hint=f"Pass {flag}; --json and --no-input never prompt.", code="missing_param"
-        )
-    return str(typer.prompt(question, hide_input=hide_input, err=True))
+        hint = f"Pass {flag}" + (f" ({', '.join(choices)})" if choices else "") + "; --json and --no-input never prompt."
+        raise HiggsError(f"Missing {flag}", hint=hint, code="missing_param")
+    if not choices:
+        return str(typer.prompt(question, hide_input=hide_input, err=True))
+    while True:  # ends with the answer, or with typer.Abort at the end of input
+        answer = str(typer.prompt(f"{question} ({', '.join(choices)})", hide_input=hide_input, err=True)).strip()
+        for choice in choices:
+            if choice.lower() == answer.lower():
+                return choice
+        err_console.print(f"{escape(answer)!r} is not one of the choices.", highlight=False)
 
 
 def _jsonable(data: Any) -> Any:

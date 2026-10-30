@@ -86,6 +86,19 @@ def test_conditional_rules_of_the_schema_apply(higgs, project, api_key, respx_mo
     assert not respx_mock.calls
 
 
+def test_conditional_rules_see_the_defaults_of_omitted_parameters(higgs, project, api_key, respx_mock, estimate):
+    # Kling O3 first/last frame: multi_shots defaults to false, so without it a single prompt is enough.
+    route = respx_mock.post(f"{API}/kling-video/o3/first-last-frame").mock(return_value=submitted())
+
+    result = gen(higgs, "kling-video/o3/first-last-frame", "prompt=a cat", "first_frame_url=https://cdn.example.com/a.jpg")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(route.calls.last.request.content) == {
+        "prompt": "a cat",
+        "first_frame_url": "https://cdn.example.com/a.jpg",
+    }
+
+
 def test_prompt_and_negative_prompt_lengths_are_checked(higgs, project, api_key, respx_mock):
     # PixVerse V6: prompt 1–5000 characters, negative prompt 1–2048.
     result = gen(higgs, "pixverse/v6/text-to-video", "prompt=" + "x" * 5001, "negative_prompt=" + "y" * 2049)

@@ -243,7 +243,7 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
 | `higgs models list [--mode i2v] [--family kling]` | models, modes, "from" prices |
 | `higgs models show <model>` | parameters, allowed quality/duration/aspect, prompt constraints |
 | `higgs models sync` | update the catalog |
-| `higgs video t2v\|i2v\|ref\|edit\|extend\|motion ...` | convenience layer for video |
+| `higgs video t2v\|i2v\|ref\|vref\|edit\|extend\|motion\|restyle ...` | convenience layer for video (one subcommand per Mode) |
 | `higgs image ...` | convenience layer for images |
 | `higgs gen <endpoint-id> -p k=v ... [--no-validate]` | generic call to any endpoint |
 | `higgs status [<request-id>]` / `higgs list [filters]` | Request status / project history |
@@ -262,6 +262,31 @@ Common convenience-layer flags: `--model`, `--quality`, `--duration`, `--aspect`
 `--seed`, `--soul <name>`, `--preset <name>`, `--count N`, `--yes`, `--no-wait`, `--json`.
 The CLI picks the endpoint from model + mode and maps the common flags to the specific model's
 parameters (`resolution` / `mode=std|pro|4k`, etc.).
+
+How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcli.video`):
+
+- **One subcommand per Mode code.** `higgs video t2v|i2v` now; #17 adds `ref`, `vref`, `edit`, `extend`,
+  `motion` and `restyle` the same way (each Mode code of §6 is its own subcommand, so `vref` and `restyle`
+  are not folded into other commands), and #18 adds `higgs image t2i|i2i`. A subcommand only declares the
+  options that make sense for its Mode and calls `hfcli.convenience.generate(kind=..., mode=..., flags=...)`.
+- **Alias table, not per-model code.** `hfcore.flags.FLAGS` lists, per flag, the parameter names that can
+  carry it, most specific first (`--image` → `image_url`, `first_frame_url`, `start_image_url`). For each
+  flag the first parameter the Endpoint has, whose `enum` (if any) accepts the value, wins; the value is
+  converted to the parameter's type (`"5"` → `5`), an allowed value is matched case-insensitively, and an
+  array parameter gets a one-item list. A flag with no such parameter is `unsupported_flag`. A new flag or a
+  new spelling is one entry in the table; `MODE_REQUIRED` lists what a Mode cannot do without (t2v: prompt,
+  i2v: image).
+- **`--quality`** picks the quality tier when the Model has tiers in the Mode (§6); otherwise it maps through
+  the table (`mode`, `resolution`, `quality`). LTX-2.5 has both tiers and `resolution`: `--quality` is the tier
+  and `resolution` is passed with `-p`.
+- **Order of precedence:** `-p` (applied last) → flags → `project.toml` `[defaults.<kind>]` → `[defaults]`
+  (keys `model`, `quality`, `duration`, `aspect`; a default the Endpoint does not accept is skipped) → an
+  interactive prompt for what is still required (Model, tier, Mode-required flags, flags whose parameter is
+  required by the schema), or `missing_param` with `--no-input` / `--json`.
+- **`--count N`:** the N bodies differ only in `seed` where the Endpoint has one: `--seed S` → S, S+1, ...;
+  without it distinct random seeds in the parameter's range. All N go through one `hfcli.pipeline.run_requests`
+  (shared with `higgs gen`): validate all → upload → estimate all → one confirmation → submit all → wait for
+  and download all. `--json` of a convenience command is always a list with one object per Request.
 
 - `--soul <name>` resolves the name via `souls.toml` and checks that the Soul ID version matches the SOUL model.
 - Soul ID training is not a Request: it is account-scoped, is not written to the project's `.hf/` and
@@ -284,6 +309,9 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
    stands in for its future upload URL. All problems are reported at once (`validation_failed`, a list of
    `{param, constraint, message}`); `--no-validate` skips this step, and only then may the Endpoint be
    missing from the catalog. The provider's soft prompt limit (`truncated_after`) is not an error.
+   Omitted parameters count with their schema defaults (as the API fills them in), so a conditional rule
+   such as Kling O3's "if `multi_shots` is true, `multi_prompt` is required" does not fire when `multi_shots`
+   is left out.
 2. Local files (`inputs/a.jpg`, `@hero`) are uploaded automatically:
    `POST /files/generate-upload-url` → `PUT` with `upload_headers` → `public_url`.
    Cached by sha256 for 7 days (the API deletes uploads after 7 days); an entry is reused while

@@ -93,6 +93,10 @@ def check_params(endpoint: Endpoint, params: dict[str, Any], *, cwd: Path) -> li
     if endpoint.source == "api":
         return []  # only listed by GET /models: no schema to check against (DESIGN.md §6)
     as_sent = {key: _as_uploaded(value, cwd) for key, value in params.items()}
+    # The API fills an omitted parameter with its default, so conditional rules
+    # (`if multi_shots is true`) must see it too; a bare `if` would match a missing key.
+    defaults = {p.name: p.default for p in endpoint.parameters if p.default is not None and p.name not in as_sent}
+    as_sent = {**defaults, **as_sent}
     validator = Draft202012Validator(endpoint.input_schema, format_checker=_FORMATS)
     found = [*_unknown(endpoint, params), *_tokens(endpoint, params)]
     for error in validator.iter_errors(as_sent):
