@@ -15,6 +15,9 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
+from hfcore import credentials
+from hfcore.api import ApiClient
+from hfcore.catalog.api_models import api_endpoints, merge_api_endpoints
 from hfcore.catalog.build import CatalogBuildError, build_catalog
 from hfcore.catalog.loader import load_base_catalog, user_catalog_path
 from hfcore.catalog.model import Catalog
@@ -41,6 +44,7 @@ class SyncResult(BaseModel):
     endpoints: int
     added: list[str]
     removed: list[str]
+    from_api: list[str]
     notes: list[str]
 
 
@@ -64,6 +68,7 @@ def sync_catalog(config_dir: Path) -> SyncResult:
         ) from None
     if pricing is None:
         _carry_over_prices(catalog, previous)
+    catalog, from_api = _merge_api_models(catalog, notes)
     before = {endpoint.id for endpoint in previous.endpoints}
     current = {endpoint.id for endpoint in catalog.endpoints}
     path = user_catalog_path(config_dir)
@@ -77,8 +82,44 @@ def sync_catalog(config_dir: Path) -> SyncResult:
         endpoints=len(catalog.endpoints),
         added=sorted(current - before),
         removed=sorted(before - current),
+        from_api=from_api,
         notes=notes,
     )
+
+
+def _merge_api_models(catalog: Catalog, notes: list[str]) -> tuple[Catalog, list[str]]:
+    """Try `GET /models` and add the Endpoints it lists that the docs lack; also their ids.
+
+    Skipped quietly without a key. Any failure or unknown format only adds a note.
+    """
+    try:
+        creds = credentials.load_credentials()
+    except HiggsError as error:
+        if error.code != "missing_key":
+            notes.append(f"Skipped GET /models: {error.message}")
+        return catalog, []
+    try:
+        with ApiClient(creds) as client:
+            body = client.list_models()
+    except (HiggsError, httpx.HTTPError) as error:
+        message = error.message if isinstance(error, HiggsError) else str(error)
+        notes.append(f"GET /models failed, ignored: {message}")
+        return catalog, []
+    entries = api_endpoints(body)
+    if not entries:
+        notes.append(f"GET /models returned nothing usable ({_shape(body)}), ignored.")
+        return catalog, []
+    return merge_api_endpoints(catalog, entries, notes)
+
+
+def _shape(body: Any) -> str:
+    """A short description of a JSON value for a note, e.g. `a list of 3 str`."""
+    if isinstance(body, list):
+        kinds = sorted({type(item).__name__ for item in body})
+        return f"a list of {len(body)} {'/'.join(kinds) or 'items'}"
+    if isinstance(body, dict):
+        return "an object with keys " + ", ".join(sorted(map(str, body))[:8])
+    return f"a {type(body).__name__}"
 
 
 def _carry_over_prices(catalog: Catalog, previous: Catalog) -> None:

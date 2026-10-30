@@ -92,6 +92,19 @@ class ApiClient:
         )
         return _parse(Deleted, response)
 
+    def list_models(self) -> Any:
+        """The undocumented `GET /models`, as raw JSON: its format is unknown, so callers must tolerate anything."""
+        response = self._call("GET", "/models")
+        try:
+            return response.json()
+        except ValueError:
+            raise ApiError(
+                f"Unexpected response from {response.request.url.path}: not JSON",
+                status=response.status_code,
+                correlation_id=response.headers.get("X-Correlation-ID"),
+                code="invalid_response",
+            ) from None
+
     def _call_on_request(
         self, method: str, request_id: str, suffix: str, errors: dict[int, tuple[str, str, str]]
     ) -> httpx.Response:
