@@ -1,196 +1,196 @@
-# higgsflow — CLI для Higgsfield API: финальный дизайн
+# higgsflow — a CLI for the Higgsfield API: final design
 
-Репозиторий: `higgsflow`. Команда: `higgs`. Неофициальный клиент, не связан с Higgsfield.
+Repository: `higgsflow`. Command: `higgs`. Unofficial client, not affiliated with Higgsfield.
 
-Директория `~/startups/fable5/higgsflow-web` никак не относится к этому проекту: это не его
-веб-часть (в т.ч. не этап 2), код и документацию оттуда не использовать и не менять.
+The directory `~/startups/fable5/higgsflow-web` has nothing to do with this project: it is not its
+web part (including not stage 2); do not use or modify code or documentation from there.
 
-Статус: дизайн согласован 2026-10-30, реализация не начата.
-Документация API: https://docs.higgsfield.ai/docs (полный дамп: `/docs/llms-full.txt`).
+Status: design agreed on 2026-10-30, implementation not started.
+API documentation: https://docs.higgsfield.ai/docs (full dump: `/docs/llms-full.txt`).
 
-## 1. Цель
+## 1. Goal
 
-Локальный CLI `higgs`, покрывающий весь документированный Higgsfield API, с проектами,
-в которых всё (входные файлы, референсы, промпты, генерации, финальные видео) лежит
-в одном месте с понятной структурой и именованием.
+A local `higgs` CLI covering the entire documented Higgsfield API, with projects in which
+everything (input files, references, prompts, generations, final videos) lives in one place
+with a clear structure and naming.
 
-Этап 1 — CLI. Этап 2 — локальный веб-интерфейс (FastAPI + лёгкий фронт) поверх того же
-ядра и тех же папок проектов. Веб-кода на этапе 1 нет, только архитектура под него.
+Stage 1 — CLI. Stage 2 — a local web interface (FastAPI + a lightweight frontend) on top of the
+same core and the same project folders. Stage 1 has no web code, only an architecture ready for it.
 
-## 2. Объём
+## 2. Scope
 
-**Входит (весь документированный API):**
-- Видео: 67 эндпоинтов в 22 семействах — Seedance 2.0/2.5, Kling 2.5 Turbo/2.6/3.0/3.0 Turbo/O3/Omni,
+**In scope (the entire documented API):**
+- Video: 67 endpoints in 22 families — Seedance 2.0/2.5, Kling 2.5 Turbo/2.6/3.0/3.0 Turbo/O3/Omni,
   Kling Motion Control 2.6/3.0, Cinema Studio 4.0, Genjutsu (motion transfer, object swap, restyle),
   Happy Horse 1.0/1.1, Wan 2.6/2.7/3.0/3.0 Prime, LTX-2.5, MiniMax H3, Hailuo 2.3, PixVerse V6,
-  Grok Imagine Video 1.5. Все режимы: text-to-video, image-to-video (start/end frame),
-  reference-to-video, video-edit, video-extend, motion control/transfer, restyle и т.д.
-- Изображения: 17 эндпоинтов (SOUL/V2/Cinema, Marketing Studio Image, Grok Image 2.0,
-  Recraft V4.1, Qwen Image 3, Ideogram v4, Z-Image Turbo и др.) — в т.ч. для референсов.
-- Обучение Soul ID (`/v1/custom-references`), каталоги пресетов (Soul styles, Genjutsu Restyle
+  Grok Imagine Video 1.5. All modes: text-to-video, image-to-video (start/end frame),
+  reference-to-video, video-edit, video-extend, motion control/transfer, restyle, etc.
+- Images: 17 endpoints (SOUL/V2/Cinema, Marketing Studio Image, Grok Image 2.0,
+  Recraft V4.1, Qwen Image 3, Ideogram v4, Z-Image Turbo, and others) — including for references.
+- Soul ID training (`/v1/custom-references`), preset catalogs (Soul styles, Genjutsu Restyle
   presets, Marketing Studio presets), Ads Studio.
-- Служебное: upload файлов, estimate цены, status, cancel, delete, usage.
+- Utilities: file upload, price estimate, status, cancel, delete, usage.
 
-**Не входит:**
-- Генерация промптов через Claude (ни `prompt`/`--enhance`, ни CLAUDE.md/skill в проектах).
-  Промпты пишет пользователь сам.
-- Webhooks (у локального CLI нет публичного HTTPS-адреса) — только polling.
-- Локальное редактирование видео (ffmpeg: trim/concat/frames).
-- Legacy-эндпоинты `/v1/speak`, `/v1/image2video/dop`, `/v1/motions` — отсутствуют в текущих доках.
-- Веб-интерфейс — этап 2.
+**Out of scope:**
+- Prompt generation via Claude (no `prompt`/`--enhance`, no CLAUDE.md/skill in projects).
+  The user writes prompts themselves.
+- Webhooks (a local CLI has no public HTTPS address) — polling only.
+- Local video editing (ffmpeg: trim/concat/frames).
+- Legacy endpoints `/v1/speak`, `/v1/image2video/dop`, `/v1/motions` — absent from the current docs.
+- Web interface — stage 2.
 
-## 3. Стек и окружение
+## 3. Stack and environment
 
-- Python 3.12, Typer (команды), Rich (таблицы, прогресс), httpx (HTTP), Pydantic (модели/схемы).
-- Тесты: pytest + respx.
-- Два пакета:
-  - `hfcore` — ядро: каталог, API-клиент, проекты, задачи, загрузки, скачивание. Ничего не знает
-    о терминале, возвращает Pydantic-модели, прогресс отдаёт через callback. Его же будет
-    вызывать будущий FastAPI-сервер.
-  - `hfcli` — тонкий слой Typer/Rich поверх ядра. У каждой команды есть `--json`
-    (для скриптов и для Claude Code).
-- Официальный SDK `higgsfield-client` (0.2.0, pre-1.0) не обязателен: API — простой REST,
-  свой клиент на httpx даёт полный контроль (idempotency, retry, estimate, upload).
-- **Изолированное окружение — Docker, только Docker Desktop** (`/usr/local/bin/docker --context desktop-linux`).
-  Rancher Desktop не используется (его `~/.rd/bin/docker` стоит первым в PATH — поэтому путь
-  к docker и контекст указываются явно).
-  - Образ собирается локально из `Dockerfile` в репе.
-  - На хосте только обёртка `~/.local/bin/higgs`: пересобирает образ при изменениях, делает
-    `docker run`, монтирует корень проектов `~/hf-projects` по тому же абсолютному пути
-    (чтобы относительные пути работали) и `~/.config/higgs/` read-only (ключи).
-  - Разработка и тесты тоже в контейнере.
-- Репозиторий: GitHub `dk2la/higgsflow` (`git@github.com:dk2la/higgsflow.git`). Проекты с видео — вне репы.
+- Python 3.12, Typer (commands), Rich (tables, progress), httpx (HTTP), Pydantic (models/schemas).
+- Tests: pytest + respx.
+- Two packages:
+  - `hfcore` — the core: catalog, API client, projects, jobs, uploads, downloads. Knows nothing
+    about the terminal, returns Pydantic models, reports progress via a callback. The future
+    FastAPI server will call it too.
+  - `hfcli` — a thin Typer/Rich layer on top of the core. Every command has `--json`
+    (for scripts and for Claude Code).
+- The official `higgsfield-client` SDK (0.2.0, pre-1.0) is not required: the API is plain REST,
+  and an own httpx client gives full control (idempotency, retry, estimate, upload).
+- **Isolated environment — Docker, Docker Desktop only** (`/usr/local/bin/docker --context desktop-linux`).
+  Rancher Desktop is not used (its `~/.rd/bin/docker` comes first in PATH — hence the docker path
+  and context are specified explicitly).
+  - The image is built locally from the `Dockerfile` in the repo.
+  - The host only has the `~/.local/bin/higgs` wrapper: it rebuilds the image on changes, runs
+    `docker run`, mounts the projects root `~/hf-projects` at the same absolute path
+    (so relative paths work) and `~/.config/higgs/` read-only (keys).
+  - Development and tests also run in the container.
+- Repository: GitHub `dk2la/higgsflow` (`git@github.com:dk2la/higgsflow.git`). Video projects live outside the repo.
 
-## 4. Аутентификация
+## 4. Authentication
 
-- Ключ Higgsfield `KEY_ID:KEY_SECRET` из console.higgsfield.ai.
-- Заголовок: `Authorization: Key <KEY_ID>:<KEY_SECRET>`.
-- Порядок поиска: env (`HF_KEY="id:secret"` или `HF_API_KEY` + `HF_API_SECRET` — совместимо
-  с официальными SDK) → `~/.config/higgs/credentials.toml` (chmod 600), заполняется `higgs auth login`.
-- Keychain не используется.
+- Higgsfield key `KEY_ID:KEY_SECRET` from console.higgsfield.ai.
+- Header: `Authorization: Key <KEY_ID>:<KEY_SECRET>`.
+- Lookup order: env (`HF_KEY="id:secret"` or `HF_API_KEY` + `HF_API_SECRET` — compatible
+  with the official SDKs) → `~/.config/higgs/credentials.toml` (chmod 600), filled in by `higgs auth login`.
+- Keychain is not used.
 
-## 5. Проекты и хранение
+## 5. Projects and storage
 
-Корень проектов по умолчанию `~/hf-projects` (настраивается). `higgs init <name>` создаёт:
+The default projects root is `~/hf-projects` (configurable). `higgs init <name>` creates:
 
 ```
 ~/hf-projects/<name>/
-├── project.toml        название, дефолты (модель, aspect ratio, качество…), budget (опц.)
-├── inputs/             свои фото/видео/аудио
-├── references/         референсы (свои + сохранённые генерации); обращение как @name
-├── prompts/            промпты пользователя (.md), для --prompt-file
+├── project.toml        name, defaults (model, aspect ratio, quality…), budget (optional)
+├── inputs/             own photos/videos/audio
+├── references/         references (own + saved generations); referred to as @name
+├── prompts/            user prompts (.md), for --prompt-file
 ├── generations/
-│   └── YYYY-MM-DD/     результаты + .json-метаданные рядом
-├── final/              отобранное через `higgs pick`
+│   └── YYYY-MM-DD/     results + .json metadata next to them
+├── final/              picked via `higgs pick`
 └── .hf/
-    ├── jobs/           <request_id>.json — пишется сразу при отправке задачи
-    └── uploads.json    кэш загрузок: sha256 файла → public_url + срок (7 дней)
+    ├── jobs/           <request_id>.json — written as soon as a job is submitted
+    └── uploads.json    upload cache: file sha256 → public_url + expiry (7 days)
 ```
 
-**БД нет.** Источник правды — JSON-файлы:
-- при отправке задачи сразу создаётся `.hf/jobs/<request_id>.json` (ID не теряется при обрыве);
-- после скачивания рядом с файлом — `<имя>.mp4.json`: эндпоинт, все параметры, промпт,
-  входные файлы/референсы, request_id, цена, ссылки, время;
-- `list`/`status` сканируют файлы. Индекс поверх можно добавить позже (например, для веба).
+**No database.** The source of truth is JSON files:
+- on job submission, `.hf/jobs/<request_id>.json` is created immediately (the ID survives a dropped connection);
+- after download, next to the file — `<name>.mp4.json`: endpoint, all parameters, prompt,
+  input files/references, request_id, price, links, timestamps;
+- `list`/`status` scan the files. An index on top can be added later (e.g. for the web UI).
 
-Глобально: `~/.config/higgs/` — credentials, config (корень проектов), `models.local.toml`.
+Global: `~/.config/higgs/` — credentials, config (projects root), `models.local.toml`.
 
-**Именование генераций:**
+**Generation naming:**
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN.<ext>`,
-например `20261030-1412_kling-3-0_i2v_sunset-beach_v02.mp4`.
-`<slug>` — из `--name` или из первых слов промпта; `vNN` — номер версии при совпадении.
+e.g. `20261030-1412_kling-3-0_i2v_sunset-beach_v02.mp4`.
+`<slug>` — from `--name` or from the first words of the prompt; `vNN` — version number on collision.
 
-## 6. Каталог моделей
+## 6. Model catalog
 
-- Эндпоинта со списком моделей в доках нет. Каталог парсится из JSON-схем в
-  `docs.higgsfield.ai/docs/llms-full.txt`, хранится в репе как `catalog.json`,
-  обновляется `higgs models sync`.
-- По каждому эндпоинту: id (= путь = строка модели в SDK), семейство, режим, параметры
-  (типы, enum, min/max, default, required), ограничения промпта (длина, negative prompt,
-  токены вида `<<<image_1>>>`), ориентировочная цена «от $/сек» со страницы прайсинга.
-- Каждый запрос валидируется по схеме до отправки.
-- **Модели, которых нет в доках** (напр. Kling 4.0, Genjutsu Light со страницы цен):
-  1. сырой вызов `higgs gen <endpoint-id> -p k=v --no-validate` — работает для любого пути,
-     т.к. API единообразен (`POST /{endpoint}` → `request_id` → тот же polling);
-     ID нельзя угадать по маркетинговому названию — брать из Console/доков/прайсинга;
-     неверный ID → 404 без списания;
-  2. ручное описание в `~/.config/higgs/models.local.toml` (путь, параметры, алиас) —
-     модель появляется в `models list` и в удобных командах с валидацией;
-  3. `models sync` пробует недокументированный `GET /models` с ключом и мержит результат,
-     если он что-то вернёт (код терпим к любому формату ответа).
+- The docs have no endpoint listing models. The catalog is parsed from the JSON schemas in
+  `docs.higgsfield.ai/docs/llms-full.txt`, stored in the repo as `catalog.json`,
+  and updated by `higgs models sync`.
+- Per endpoint: id (= path = model string in the SDK), family, mode, parameters
+  (types, enum, min/max, default, required), prompt constraints (length, negative prompt,
+  tokens like `<<<image_1>>>`), an approximate "from $/sec" price from the pricing page.
+- Every request is validated against the schema before submission.
+- **Models not in the docs** (e.g. Kling 4.0, Genjutsu Light from the pricing page):
+  1. raw call `higgs gen <endpoint-id> -p k=v --no-validate` — works for any path,
+     since the API is uniform (`POST /{endpoint}` → `request_id` → the same polling);
+     the ID cannot be guessed from the marketing name — take it from the Console/docs/pricing;
+     a wrong ID → 404 with no charge;
+  2. a manual description in `~/.config/higgs/models.local.toml` (path, parameters, alias) —
+     the model shows up in `models list` and in the convenience commands with validation;
+  3. `models sync` tries the undocumented `GET /models` with the key and merges the result
+     if it returns anything (the code tolerates any response format).
 
-## 7. Команды
+## 7. Commands
 
-| Команда | Назначение |
+| Command | Purpose |
 |---|---|
-| `higgs init <name>` / `higgs projects` | создать проект / список проектов |
-| `higgs auth login` | сохранить ключ |
-| `higgs models list [--mode i2v] [--family kling]` | модели, режимы, цены «от» |
-| `higgs models show <model>` | параметры, допустимые качество/длительность/aspect, ограничения промпта |
-| `higgs models sync` | обновить каталог |
-| `higgs video t2v\|i2v\|ref\|edit\|extend\|motion ...` | удобный слой для видео |
-| `higgs image ...` | удобный слой для изображений |
-| `higgs gen <endpoint-id> -p k=v ... [--no-validate]` | универсальный вызов любого эндпоинта |
-| `higgs status [<id>]` / `higgs list [фильтры]` | статус задач / история проекта |
-| `higgs sync` | докачать завершённые задачи |
-| `higgs download <id>` | скачать результат повторно (пока ссылка жива) |
-| `higgs cancel <id>` / `higgs delete <id>` | отмена (только queued) / удаление на стороне API |
-| `higgs pick <generation>` | скопировать в `final/` |
-| `higgs ref save <generation> <name>` | сохранить генерацию как референс |
-| `higgs usage` | траты проекта (локально) + сводка аккаунта (`GET /models/usage`) |
+| `higgs init <name>` / `higgs projects` | create a project / list projects |
+| `higgs auth login` | save the key |
+| `higgs models list [--mode i2v] [--family kling]` | models, modes, "from" prices |
+| `higgs models show <model>` | parameters, allowed quality/duration/aspect, prompt constraints |
+| `higgs models sync` | update the catalog |
+| `higgs video t2v\|i2v\|ref\|edit\|extend\|motion ...` | convenience layer for video |
+| `higgs image ...` | convenience layer for images |
+| `higgs gen <endpoint-id> -p k=v ... [--no-validate]` | generic call to any endpoint |
+| `higgs status [<id>]` / `higgs list [filters]` | job status / project history |
+| `higgs sync` | download completed jobs |
+| `higgs download <id>` | re-download a result (while the link is alive) |
+| `higgs cancel <id>` / `higgs delete <id>` | cancel (queued only) / delete on the API side |
+| `higgs pick <generation>` | copy to `final/` |
+| `higgs ref save <generation> <name>` | save a generation as a reference |
+| `higgs usage` | project spend (local) + account summary (`GET /models/usage`) |
 
-Общие флаги удобного слоя: `--model`, `--quality`, `--duration`, `--aspect`, `--image`,
+Common convenience-layer flags: `--model`, `--quality`, `--duration`, `--aspect`, `--image`,
 `--end-image`, `--ref`, `--video`, `--audio`, `--prompt` / `--prompt-file`, `--name`,
-`--seed`, `--yes`, `--no-wait`, `--json`. CLI сам выбирает эндпоинт по модели + режиму
-и маппит общие флаги в параметры конкретной модели (`resolution` / `mode=std|pro|4k` и т.п.).
+`--seed`, `--yes`, `--no-wait`, `--json`. The CLI picks the endpoint from model + mode
+and maps the common flags to the specific model's parameters (`resolution` / `mode=std|pro|4k`, etc.).
 
-Стиль: всё задаётся флагами; если обязательного параметра нет — интерактивный вопрос
-(выбор модели, режима, качества, длительности). `--yes` / `--no-input` — для скриптов.
+Style: everything is set via flags; if a required parameter is missing — an interactive prompt
+(choice of model, mode, quality, duration). `--yes` / `--no-input` — for scripts.
 
-## 8. Жизненный цикл генерации
+## 8. Generation lifecycle
 
-1. Валидация параметров по схеме каталога.
-2. Локальные файлы (`inputs/a.jpg`, `@hero`) автоматически загружаются:
-   `POST /files/generate-upload-url` → `PUT` с `upload_headers` → `public_url`.
-   Кэш по sha256 на 7 дней (API удаляет загрузки через 7 дней).
-3. Точная цена: `POST /estimate/{endpoint}` с тем же телом → `{"usd": "..."}`.
-   Показ, подтверждение (`--yes` пропускает), проверка `budget` проекта (предупреждение при превышении).
-4. Отправка `POST /{endpoint}` с `Idempotency-Key` (UUID); сразу запись `.hf/jobs/<request_id>.json`.
-5. Polling `GET /requests/{id}/status`: 2 с → backoff до 10 с + jitter.
-   `429 account_queue_full` → ждать `Retry-After`; `503` → retry с backoff.
-6. Терминальные статусы: `completed`, `failed`, `nsfw`, `canceled` (failed/nsfw/canceled не тарифицируются).
-7. Автоскачивание результата (ссылки живут ~7 дней) + запись `.json` рядом.
-8. `--no-wait`: вернуть request_id сразу; `higgs sync` потом докачает.
+1. Validate parameters against the catalog schema.
+2. Local files (`inputs/a.jpg`, `@hero`) are uploaded automatically:
+   `POST /files/generate-upload-url` → `PUT` with `upload_headers` → `public_url`.
+   Cached by sha256 for 7 days (the API deletes uploads after 7 days).
+3. Exact price: `POST /estimate/{endpoint}` with the same body → `{"usd": "..."}`.
+   Display, confirmation (`--yes` skips it), project `budget` check (warning when exceeded).
+4. Submit `POST /{endpoint}` with an `Idempotency-Key` (UUID); immediately write `.hf/jobs/<request_id>.json`.
+5. Polling `GET /requests/{id}/status`: 2 s → backoff up to 10 s + jitter.
+   `429 account_queue_full` → wait for `Retry-After`; `503` → retry with backoff.
+6. Terminal statuses: `completed`, `failed`, `nsfw`, `canceled` (failed/nsfw/canceled are not billed).
+7. Auto-download of the result (links live ~7 days) + write the `.json` next to it.
+8. `--no-wait`: return the request_id immediately; `higgs sync` downloads it later.
 
-## 9. Справка по API (на 2026-10-30)
+## 9. API reference (as of 2026-10-30)
 
-- Base URL `https://api.higgsfield.ai`. Ответы содержат `X-Correlation-ID`.
+- Base URL `https://api.higgsfield.ai`. Responses include `X-Correlation-ID`.
 - Submit → `{status:"queued", request_id, status_url, cancel_url, expires_after}`.
-- Output: `video:{url}`, `images:[{url}]`, `audio:{url}`; у некоторых операций доп. артефакты.
-- Cancel: `POST /requests/{id}/cancel` (202, или 400 если уже в работе).
-  Delete: `DELETE /requests/{id}` (409 пока queued/in_progress).
-- Лимиты — по concurrency; сверх лимита задачи встают в очередь, переполнение очереди → 429.
-- Биллинг в USD (отдельно от кредитов подписки higgsfield.ai), видео — за секунду результата.
-  Эндпоинта баланса нет (только Console). Эндпоинта истории генераций нет.
-- Ошибки: 401 неверный ключ; 403 `api_key_expired`/`api_key_disabled`/недостаточно средств;
-  404/423/503 — модель недоступна; 422 — конфликт idempotency.
-- Допустимые типы загрузки: jpeg/png/webp/gif, wav, mp4.
+- Output: `video:{url}`, `images:[{url}]`, `audio:{url}`; some operations have extra artifacts.
+- Cancel: `POST /requests/{id}/cancel` (202, or 400 if already in progress).
+  Delete: `DELETE /requests/{id}` (409 while queued/in_progress).
+- Limits are by concurrency; jobs beyond the limit are queued, queue overflow → 429.
+- Billing in USD (separate from higgsfield.ai subscription credits), video — per second of output.
+  There is no balance endpoint (Console only). There is no generation history endpoint.
+- Errors: 401 invalid key; 403 `api_key_expired`/`api_key_disabled`/insufficient funds;
+  404/423/503 — model unavailable; 422 — idempotency conflict.
+- Allowed upload types: jpeg/png/webp/gif, wav, mp4.
 
-**Не подтверждено:** формат и назначение `GET /models`; реальная concurrency по умолчанию
-(2 или 20); точные цены по всем конфигурациям (кроме `/estimate`); глобальные лимиты размера файлов;
-эндпоинты Kling 4.0 и Genjutsu Light.
+**Unconfirmed:** the format and purpose of `GET /models`; the actual default concurrency
+(2 or 20); exact prices for all configurations (other than `/estimate`); global file size limits;
+the Kling 4.0 and Genjutsu Light endpoints.
 
-## 10. Процесс разработки
+## 10. Development process
 
-- TDD (red → green → refactor), тесты через публичный интерфейс: вызов CLI-команды
-  + подмена HTTP на уровне транспорта (respx). Внутренние функции не мокаются.
-- Фикстуры ответов — из примеров документации; парсер каталога — на снапшоте `llms-full.txt` в репе.
-- Тесты запускаются в Docker-контейнере.
-- Живой smoke-тест (upload → submit → poll → download на реальном API) делает пользователь.
+- TDD (red → green → refactor), tests through the public interface: invoking a CLI command
+  + replacing HTTP at the transport level (respx). Internal functions are not mocked.
+- Response fixtures come from the documentation examples; the catalog parser runs on an `llms-full.txt` snapshot in the repo.
+- Tests run in a Docker container.
+- The live smoke test (upload → submit → poll → download against the real API) is done by the user.
 
-## 11. Этап 2 (не сейчас)
+## 11. Stage 2 (not now)
 
-Локальный веб: FastAPI + лёгкий фронт в том же Docker-образе, поверх `hfcore` и тех же папок
-проектов — галерея проектов/генераций, превью видео, формы по JSON-схемам моделей,
-сравнение вариантов, скачивание. При необходимости — индекс (SQLite) поверх JSON-файлов.
-Веб живёт в этой же репе; `~/startups/fable5/higgsflow-web` к нему не относится.
+Local web: FastAPI + a lightweight frontend in the same Docker image, on top of `hfcore` and the same
+project folders — a gallery of projects/generations, video previews, forms from the models' JSON schemas,
+comparing variants, downloads. If needed — an index (SQLite) on top of the JSON files.
+The web UI lives in this same repo; `~/startups/fable5/higgsflow-web` has nothing to do with it.
