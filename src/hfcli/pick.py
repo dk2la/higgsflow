@@ -22,7 +22,7 @@ def pick(
 ) -> None:
     """Pick a Generation: copy it with its .json and Artifacts into final/."""
     target = current_project(project)
-    picked = generations.pick(target, Path(generation))
+    picked = generations.pick(target, generation, cwd=Path.cwd())
     if as_json:
         print_json(picked)
         return
