@@ -28,7 +28,10 @@ Only the projects root is visible inside the container, so files you pass to `hi
 Relative paths are relative to the folder you typed them in: from a folder outside the projects root
 (`cd ~/Desktop; higgs gen … --project demo -p image_url=photo.jpg`) they fail with
 `input_outside_projects_root` and a hint to copy the file into the Project's `inputs/`, never silently naming a
-file in the projects root. A bare Generation file name for `pick`/`ref save` is still looked up in the Project.
+file in the projects root. The same goes for `--prompt-file` (copy it into `prompts/`), `soul train` images and
+the Generation of `pick`/`ref save`. Since higgs cannot see that folder, any `-p` value there that looks like
+a file name (`photo.heic`: no spaces, an extension) is taken as one. A bare Generation file name for
+`pick`/`ref save` is still looked up in the Project.
 The wrapper also passes the host's time zone (`TZ`, from `$TZ` or the `/etc/localtime` symlink, else UTC),
 so the times in Generation names are local.
 
@@ -94,7 +97,9 @@ or canceled Request ends with an error and downloads nothing.
 Retries are capped, not endless. A submit that hits a full queue (429, after each `Retry-After`) or a
 transient error (network, 5xx) is tried 5 times with the same Idempotency-Key; after a 429 the error says
 that Request was not submitted or charged (and, with `--count N`, which earlier ones were), so retry once
-running Requests finish (`higgs list --status pending`).
+running Requests finish (`higgs list --status pending`). After network or 5xx failures it says the submit may
+have reached the API and be billed once, under the Idempotency-Key it names; check the Console before
+submitting it again.
 While waiting, 8 failed status checks in a row (429, 5xx, network) end the wait with an error; nothing is
 lost, the Request keeps running and `higgs sync` downloads it later.
 
@@ -176,7 +181,8 @@ files, and the exit code is 1 when any Request did not complete. A Request whose
 its place with that error too (`higgs sync` finishes it later). If a submit gives up partway (say the 2nd of 3
 on a full queue), the rest are not submitted: each gets an item `{"request_id": null, "error": ...}` whose hint
 names the Requests that were submitted (and are billed once they complete), and those are still waited for and
-downloaded:
+downloaded. If that submit gave up on network or 5xx failures, the hint says the Request it was submitting may
+have been submitted too:
 
 ```json
 [
@@ -313,8 +319,8 @@ when they are valid JSON (`5`, `0.5`, `true`, `null`, `[...]`, `{...}`) and are 
 A `-p` value that is a local file is an Input: it is uploaded before the submit and replaced by its
 `public_url`, also inside lists and objects (`-p image_url=inputs/a.jpg`,
 `-p 'images=["inputs/a.jpg","inputs/b.png"]'`). A string counts as a file when it names an existing file
-(relative to the current directory, or absolute) or ends in `.jpg`/`.jpeg`/`.png`/`.webp`/`.gif`/`.wav`/`.mp4`
-(then a missing file is an error); URLs are left alone. The file must be inside the projects root (copy it
+(relative to the folder you ran `higgs` in, or absolute) or ends in
+`.jpg`/`.jpeg`/`.png`/`.webp`/`.gif`/`.wav`/`.mp4` (then a missing file is an error); URLs are left alone. The file must be inside the projects root (copy it
 into the Project's `inputs/` first) and really be a jpeg, png, webp, gif, wav or mp4, judged by its content.
 Uploads are cached by content in `.hf/uploads.json` and reused for up to 7 days, and the Request record lists
 the Inputs it used.

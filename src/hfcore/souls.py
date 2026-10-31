@@ -46,7 +46,7 @@ from hfcore.api import ApiClient, ApiError, CustomReference
 from hfcore.catalog import Endpoint
 from hfcore.errors import HiggsError
 from hfcore.lifecycle import POLL_ERROR_ATTEMPTS, SUBMIT_ATTEMPTS, Backoff, retry_wait
-from hfcore.projects import Project
+from hfcore.projects import Project, check_inside_projects_root
 
 SOULS_FILE = "souls.toml"
 # SOUL V2 is the current SOUL Model; the API's own default is v1.
@@ -143,6 +143,8 @@ def train_soul(
     for image in images:
         # A URL is sent as it is; anything else must be a file (or Reference) to upload.
         if "://" not in image and not inputs.is_input(image, cwd):
+            # Every training image is a file, so one outside the projects root is rejected as such.
+            check_inside_projects_root(cwd / Path(image).expanduser(), image, project, what="Input", folder="inputs")
             raise HiggsError(
                 f"Training image {image} is not a file",
                 hint="Pass image files in the Project (e.g. inputs/front.jpg) or References (@name).",

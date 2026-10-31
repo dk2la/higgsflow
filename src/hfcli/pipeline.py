@@ -5,8 +5,9 @@
 the Inputs → estimate every body → confirm the total price once → submit every body →
 (unless `no_wait`) wait for every Request and download the completed ones.
 
-A command then prints the `Batch` (`result_json` / `echo_result`) and calls
-`Batch.raise_unfinished()`, so a failed Request still fails the command after the
+A command then prints the `Batch` and fails if anything did not complete: `gen` and text
+output call `Batch.raise_unfinished()` after printing, a convenience command under `--json`
+prints `batch_json` and exits 1. So a failed Request still fails the command after the
 others were reported. One Request's trouble never hides the others: a Request that did
 not complete, or whose wait or download gave up, keeps its error on its own result, and a
 submit that gives up partway through `--count N` stops the submits but the Requests already
@@ -111,7 +112,7 @@ def run_requests(
             except HiggsError as error:
                 if not batch.results:
                     if len(bodies) > 1:
-                        error.hint = _join(error.hint, f"None of the {len(bodies)} Requests was submitted.")
+                        error.hint = _join(error.hint, _none_submitted(error, len(bodies)))
                     raise
                 batch.submit_error = error
                 batch.not_submitted = len(bodies) - index
@@ -134,14 +135,38 @@ def run_requests(
     return batch
 
 
+def _none_submitted(error: HiggsError, requested: int) -> str:
+    """What the first submit of `--count N` giving up means for the whole batch."""
+    if not lifecycle.submit_may_have_reached_api(error):
+        return f"None of the {requested} Requests was submitted."
+    others = requested - 1
+    return f"The other {others} {_requests(others)} {_were(others)} not submitted."
+
+
 def _partly_submitted(batch: Batch, requested: int) -> str:
+    """What a submit giving up partway through `--count N` means for the whole batch.
+
+    The Request whose submit gave up counts as not submitted only when the API refused it;
+    after a network failure or a 5xx it may exist and be billed (its error says so).
+    """
+    assert batch.submit_error is not None
     submitted = len(batch.results)
     ids = ", ".join(result.record.request_id for result in batch.results)
-    was, billed = ("was", "is billed once it completes") if submitted == 1 else ("were", "are billed once they complete")
-    return (
-        f"{submitted} of the {requested} Requests {was} submitted before this ({ids}) and {billed}; "
-        f"the other {batch.not_submitted} were not submitted."
-    )
+    billed = "is billed once it completes" if submitted == 1 else "are billed once they complete"
+    done = f"{submitted} of the {requested} Requests {_were(submitted)} submitted before this ({ids}) and {billed}"
+    if not lifecycle.submit_may_have_reached_api(batch.submit_error):
+        return f"{done}; the other {batch.not_submitted} {_were(batch.not_submitted)} not submitted."
+    rest = batch.not_submitted - 1
+    tail = f", and the other {rest} {_were(rest)} not submitted." if rest else "."
+    return f"{done}; this one may have been submitted too (see above){tail}"
+
+
+def _requests(count: int) -> str:
+    return "Request" if count == 1 else "Requests"
+
+
+def _were(count: int) -> str:
+    return "was" if count == 1 else "were"
 
 
 def _join(hint: str | None, more: str) -> str:
@@ -156,7 +181,9 @@ def batch_json(batch: Batch) -> list[dict[str, Any]]:
     items = [result_json(result, batch.warnings) for result in batch.results]
     if batch.submit_error is not None:
         error = batch.submit_error.to_dict()
-        items += [{"request_id": None, "error": error, "warnings": batch.warnings}] * batch.not_submitted
+        items += [
+            {"request_id": None, "error": dict(error), "warnings": batch.warnings} for _ in range(batch.not_submitted)
+        ]
     return items
 
 

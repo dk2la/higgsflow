@@ -536,6 +536,46 @@ def test_a_submit_giving_up_mid_count_still_reports_and_downloads_what_was_submi
         assert "2 were not submitted" in error["hint"]
 
 
+def test_a_submit_failing_on_the_network_mid_count_says_that_request_may_have_been_submitted(
+    higgs, project, api_key, respx_mock, estimate
+):
+    # The second submit times out every time: it may have reached the API, the third never ran.
+    respx_mock.post(f"{API}/{WAN_T2V}").mock(side_effect=[submitted("req-1"), *[httpx.ReadTimeout("timed out")] * 5])
+    mock_completed_videos(respx_mock)
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--count", "3", "--json", "--yes")
+
+    assert result.exit_code == 1
+    output = json.loads(result.output)
+    assert [item["request_id"] for item in output] == ["req-1", None, None]
+    hint = output[1]["error"]["hint"]
+    assert "may have reached the API" in hint and "Idempotency-Key" in hint
+    assert "1 of the 3 Requests was submitted before this (req-1)" in hint
+    assert "this one may have been submitted too (see above), and the other 1 was not submitted" in hint
+    assert "2 were not submitted" not in hint
+
+
+@pytest.mark.parametrize(
+    ("failure", "says"),
+    [
+        (QUEUE_FULL, "None of the 3 Requests was submitted."),
+        (httpx.ReadTimeout("timed out"), "The other 2 Requests were not submitted."),
+    ],
+)
+def test_a_first_submit_giving_up_says_what_it_means_for_the_count(
+    higgs, project, api_key, respx_mock, estimate, failure, says
+):
+    respx_mock.post(f"{API}/{WAN_T2V}").mock(side_effect=[failure] * 5)
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--count", "3", "--json", "--yes")
+
+    assert result.exit_code == 1
+    hint = json.loads(result.output)["error"]["hint"]
+    assert says in hint
+    # A timed-out submit may exist, so it must not be counted among the unsubmitted.
+    assert ("None of the" in hint) == (failure is QUEUE_FULL)
+
+
 def test_a_submit_giving_up_mid_count_as_text_names_what_was_submitted(higgs, project, api_key, respx_mock, estimate):
     respx_mock.post(f"{API}/{WAN_T2V}").mock(side_effect=[submitted("req-1"), *[QUEUE_FULL] * 5])
 

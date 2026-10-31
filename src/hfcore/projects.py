@@ -138,6 +138,24 @@ def current_project(cwd: Path, *, name: str | None = None) -> Project:
     return found
 
 
+def check_inside_projects_root(path: Path, source: str, project: Project, *, what: str, folder: str) -> None:
+    """Reject a file outside the projects root, the only folder higgs can see (ADR 0003).
+
+    `source` is the path as the user typed it, `what` names it in the message ("Input",
+    "Prompt file") and `folder` is the Project folder the hint says to copy it into.
+    """
+    root = config.projects_root().resolve()
+    if not path.resolve().is_relative_to(root):
+        raise HiggsError(
+            f"{what} {source} is outside the projects root {root}",
+            hint=(
+                f"Only the projects root is visible to higgs. Copy the file into the Project's {folder}/ "
+                f"(e.g. cp {source} {project.path / folder}/) and pass that path."
+            ),
+            code="input_outside_projects_root",
+        )
+
+
 def _check_name(name: str) -> None:
     # A Project name is a single folder directly under the projects root.
     if not name or name.startswith(".") or "/" in name or "\\" in name:
