@@ -31,10 +31,11 @@ def record_of(project: Path) -> Any:
     return json.loads((project / ".hf" / "requests" / f"{REQUEST_ID}.json").read_text())
 
 
-def test_cancel_of_a_queued_request_marks_it_canceled(higgs, project, api_key, respx_mock, estimate):
+def test_cancel_of_a_queued_request_marks_it_canceled(higgs, project, api_key, respx_mock, estimate, clock):
     submit(higgs, respx_mock)
     # The docs: "A successful cancellation returns 202 Accepted with an empty body."
     route = respx_mock.post(CANCEL_URL).mock(return_value=httpx.Response(202))
+    clock.advance(minutes=5)
 
     result = higgs("cancel", REQUEST_ID, "--json")
 
@@ -42,6 +43,7 @@ def test_cancel_of_a_queued_request_marks_it_canceled(higgs, project, api_key, r
     assert route.calls.last.request.headers["Authorization"] == api_key
     record = record_of(project)
     assert record["status"] == "canceled"
+    assert record["updated_at"] == "2026-10-30T12:05:00Z"
     output = json.loads(result.output)
     assert output["request_id"] == REQUEST_ID
     assert output["status"] == "canceled"
@@ -68,7 +70,9 @@ def test_cancel_of_an_in_progress_request_reports_it_cannot_be_canceled(higgs, p
     assert record_of(project)["status"] == "queued"
 
 
-def test_delete_records_the_deletion_and_leaves_local_files_in_place(higgs, project, api_key, respx_mock, estimate):
+def test_delete_records_the_deletion_and_leaves_local_files_in_place(
+    higgs, project, api_key, respx_mock, estimate, clock
+):
     submit(higgs, respx_mock)
     generation = project / "generations" / "2026-10-30" / "20261030-1200_soul_t2i_a-cat_v01.png"
     generation.parent.mkdir(parents=True)
@@ -79,6 +83,7 @@ def test_delete_records_the_deletion_and_leaves_local_files_in_place(higgs, proj
     route = respx_mock.delete(DELETE_URL).mock(
         return_value=httpx.Response(200, json={"request_id": REQUEST_ID, "status": "deleted"})
     )
+    clock.advance(minutes=5)
 
     result = higgs("delete", REQUEST_ID, "--json")
 
@@ -87,7 +92,8 @@ def test_delete_records_the_deletion_and_leaves_local_files_in_place(higgs, proj
     assert sorted(p for p in project.rglob("*") if p.is_file()) == files_before
     assert generation.read_bytes() == b"png"
     record = record_of(project)
-    assert record["deleted_at"]
+    assert record["deleted_at"] == "2026-10-30T12:05:00Z"
+    assert record["updated_at"] == "2026-10-30T12:05:00Z"
     assert record["status"] == "queued"  # the Request's own outcome is unchanged
     output = json.loads(result.output)
     assert output["request_id"] == REQUEST_ID
