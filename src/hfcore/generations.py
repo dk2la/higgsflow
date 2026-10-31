@@ -63,17 +63,7 @@ def check_generation(generation: Path) -> CheckedGeneration:
     put there by hand). Callers run this before copying anything, so a failure never leaves
     a partial copy behind.
     """
-    source_metadata = metadata_path(generation)
-    if not source_metadata.is_file():
-        raise HiggsError(
-            f"{generation.name} has no metadata ({source_metadata.name} is missing), so it is not a Generation",
-            hint="Pass the Generation itself (an Artifact is copied along with it), or copy a hand-made file yourself.",
-            code="generation_metadata_missing",
-        )
-    try:
-        metadata = GenerationMetadata.model_validate_json(source_metadata.read_text())
-    except ValidationError as error:
-        raise HiggsError(f"Cannot read {source_metadata}: {error}", code="invalid_generation_metadata") from None
+    metadata = read_metadata(generation)
     artifacts = [generation.with_name(entry.file) for entry in metadata.artifacts]
     missing = [path.name for path in artifacts if not path.is_file()]
     if missing:
@@ -82,7 +72,42 @@ def check_generation(generation: Path) -> CheckedGeneration:
             hint="Download the Request again (higgs download <request-id>) to restore them.",
             code="artifact_missing",
         )
-    return CheckedGeneration(path=generation, metadata_path=source_metadata, metadata=metadata, artifacts=artifacts)
+    return CheckedGeneration(
+        path=generation, metadata_path=metadata_path(generation), metadata=metadata, artifacts=artifacts
+    )
+
+
+def read_metadata(generation: Path) -> GenerationMetadata:
+    """A Generation's `<file>.json`; a file without a readable one is not a Generation."""
+    source_metadata = metadata_path(generation)
+    if not source_metadata.is_file():
+        raise HiggsError(
+            f"{generation.name} has no metadata ({source_metadata.name} is missing), so it is not a Generation",
+            hint="Pass the Generation itself (an Artifact is copied along with it), or copy a hand-made file yourself.",
+            code="generation_metadata_missing",
+        )
+    try:
+        return GenerationMetadata.model_validate_json(source_metadata.read_text())
+    except (ValidationError, OSError) as error:
+        raise HiggsError(f"Cannot read {source_metadata}: {error}", code="invalid_generation_metadata") from None
+
+
+def list_generations(project: Project) -> list[tuple[Path, GenerationMetadata]]:
+    """Every Generation in the Project's `generations/YYYY-MM-DD/`, with its metadata, by path.
+
+    A file whose `.json` is missing or unreadable is skipped (an Artifact, or a file put
+    there by hand), so a stray file never breaks a listing.
+    """
+    found = []
+    for source_metadata in sorted((project.path / "generations").glob("*/*.json")):
+        generation = source_metadata.with_suffix("")
+        if not generation.is_file():
+            continue
+        try:
+            found.append((generation, read_metadata(generation)))
+        except HiggsError:
+            continue
+    return found
 
 
 def copy_generation(generation: Path, folder: Path) -> CopiedGeneration:

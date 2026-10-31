@@ -1,8 +1,11 @@
 """Keeping track of a Project's Requests after the submit: `status`, `list`, `sync`, `download`.
 
 Everything here starts from the Request records in `.hf/requests/` (ADR 0002). Listing
-reads only those files; refreshing asks the API for one status per Request (no waiting);
-downloading goes through `hfcore.downloads.download_request`, as `gen` does.
+(`project_history`) also scans the Generation `.json` files in `generations/`, merged by
+request id, so a Request whose record is gone (a Project copied without `.hf/`) still
+shows up; it reads local files only and writes nothing. Refreshing asks the API for one
+status per Request (no waiting); downloading goes through
+`hfcore.downloads.download_request`, as `gen` does.
 """
 
 from __future__ import annotations
@@ -13,16 +16,64 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from hfcore import clock, lifecycle
+from hfcore import clock, generations, lifecycle
 from hfcore.api import ApiClient, RequestStatus
 from hfcore.catalog import Catalog
-from hfcore.downloads import DownloadedGeneration, download_request
+from hfcore.downloads import DownloadedGeneration, GenerationMetadata, download_request
 from hfcore.errors import HiggsError
 from hfcore.projects import Project
+from hfcore.naming import Naming
 from hfcore.requests import RequestRecord, list_requests, quiet_catalog, request_model
 
 # `--status pending` stands for every status that is not terminal yet.
 PENDING = "pending"
+
+
+class ListedRequest(RequestRecord):
+    """A Request in the Project's history: its record plus what `generations/` says about it."""
+
+    # Its Generation files in `generations/` (paths relative to the Project), Artifacts excluded.
+    generations: list[str] = []
+    # It has no record in `.hf/requests/`; it was rebuilt from its Generations' metadata.
+    recovered: bool = False
+
+
+def project_history(project: Project) -> list[ListedRequest]:
+    """Every Request of the Project, oldest submit first: the records, plus a Request rebuilt
+    from Generation metadata for every request id that has Generations but no record."""
+    found: dict[str, list[tuple[str, GenerationMetadata]]] = {}
+    for path, metadata in generations.list_generations(project):
+        found.setdefault(metadata.request_id, []).append((str(path.relative_to(project.path)), metadata))
+    history = []
+    for record in list_requests(project):
+        names = [name for name, _ in found.pop(record.request_id, [])]
+        history.append(ListedRequest(**record.model_dump(), generations=names))
+    for items in found.values():
+        history.append(_recovered(items))
+    return sorted(history, key=lambda request: request.submitted_at)
+
+
+def _recovered(items: list[tuple[str, GenerationMetadata]]) -> ListedRequest:
+    """A Request rebuilt from the metadata of its Generations (it completed: they were downloaded)."""
+    metadata = items[0][1]
+    return ListedRequest(
+        request_id=metadata.request_id,
+        endpoint=metadata.endpoint,
+        params=metadata.params,
+        inputs=metadata.inputs,
+        prompt=metadata.prompt,
+        status="completed",
+        submitted_at=metadata.submitted_at,
+        updated_at=metadata.completed_at,
+        status_url=metadata.status_url,
+        expires_at=metadata.expires_at,
+        estimate_usd=metadata.price_usd,
+        naming=Naming(model_slug=metadata.model_slug, mode=metadata.mode, slug=metadata.slug, version=metadata.version),
+        downloaded_at=max(meta.downloaded_at for _, meta in items),
+        files=[name for name, _ in items],
+        generations=[name for name, _ in items],
+        recovered=True,
+    )
 
 
 def find_requests(
@@ -33,8 +84,8 @@ def find_requests(
     mode: str | None = None,
     since: date | None = None,
     on: date | None = None,
-) -> list[RequestRecord]:
-    """The Project's Requests matching every given filter, oldest first; reads local files only.
+) -> list[ListedRequest]:
+    """The Project's Requests (`project_history`) matching every given filter, oldest first.
 
     `statuses` match any of them (`pending` = not terminal yet); `model` is matched by
     `model_matcher`; `mode` is the Mode code; `since`/`on` compare the local date of the
@@ -43,7 +94,7 @@ def find_requests(
     wanted = {status.lower() for status in statuses}
     of_model = model_matcher(model, quiet_catalog()) if model else None
     found = []
-    for record in list_requests(project):
+    for record in project_history(project):
         day = record.submitted_at.astimezone().date()
         naming = record.naming
         if wanted and record.status not in wanted and not (PENDING in wanted and not record.is_terminal):

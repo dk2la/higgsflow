@@ -96,13 +96,15 @@ def list_requests(
         typer.echo("No Requests match" if (status_filter or model or mode or since or on) else "No Requests yet")
         return
     table = Table()
-    for column in ("Submitted", "Request", "Model", "Mode", "Name", "Status", "Price", "Files"):
+    for column in ("Submitted", "Request", "Model", "Mode", "Name", "Status", "Price", "Generations"):
         table.add_column(column, no_wrap=column in ("Submitted", "Request"))
     for record in found:
         naming = record.naming
         status_cell = record.status
         if record.deleted_at is not None:
             status_cell += f" (deleted {record.deleted_at.astimezone():%Y-%m-%d})"
+        if record.recovered:
+            status_cell += " (recovered)"
         table.add_row(
             f"{record.submitted_at.astimezone():%Y-%m-%d %H:%M}",
             record.request_id[:8],
@@ -111,7 +113,7 @@ def list_requests(
             escape(f"{naming.slug} v{naming.version:02d}") if naming else "",
             escape(status_cell),
             f"${record.estimate_usd}" if record.estimate_usd else "",
-            str(len(record.files)) if record.files else "",
+            escape("\n".join(name.rsplit("/", 1)[-1] for name in record.generations)),
         )
     console.print(table)
 
