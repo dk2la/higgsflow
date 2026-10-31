@@ -84,6 +84,12 @@ slug. The model slug and Mode come from the catalog, with the quality tier when 
 from the Endpoint id (see DESIGN.md §5). A failed, nsfw
 or canceled Request ends with an error and downloads nothing.
 
+Retries are capped, not endless. A submit that hits a full queue (429, after each `Retry-After`) or a
+transient error (network, 5xx) is tried 5 times with the same Idempotency-Key; after a 429 the error says
+nothing was submitted or charged, so retry once running Requests finish (`higgs list --status pending`).
+While waiting, 8 failed status checks in a row (429, 5xx, network) end the wait with an error; nothing is
+lost, the Request keeps running and `higgs sync` downloads it later.
+
 ### Video: `higgs video t2v|i2v|ref|vref|edit|extend|motion|restyle`
 
 `higgs video <mode>` is `higgs gen` with friendly flags: `--model` (slug or name, as `higgs models list`

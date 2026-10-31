@@ -95,10 +95,27 @@ def _submit_with_retries(
             return client.submit(endpoint, params, idempotency_key=idempotency_key)
         except HiggsError as error:
             wait = retry_wait(error, backoff, submit=True)
-            if wait is None or attempt == SUBMIT_ATTEMPTS:
+            if wait is None:
+                raise
+            if attempt == SUBMIT_ATTEMPTS:
+                error.hint = _submit_gave_up_hint(error, idempotency_key)
                 raise
             clock.sleep(wait)
     raise AssertionError("unreachable")
+
+
+def _submit_gave_up_hint(error: HiggsError, idempotency_key: str) -> str:
+    """What happened and what to do once `SUBMIT_ATTEMPTS` retryable failures in a row are used up."""
+    if isinstance(error, ApiError) and error.status == 429:
+        return (
+            f"Nothing was submitted or charged (the API refused all {SUBMIT_ATTEMPTS} attempts). Retry once running "
+            "Requests finish; `higgs list --status pending` shows this Project's."
+        )
+    return (
+        f"Gave up after {SUBMIT_ATTEMPTS} attempts. The submit may have reached the API (it would then run and be "
+        f"billed once, under Idempotency-Key {idempotency_key}), but no record was written, so higgs cannot track "
+        "it; check the Console before submitting again."
+    )
 
 
 def wait_for_request(
@@ -118,9 +135,12 @@ def wait_for_request(
             failures += 1
             wait = retry_wait(error, backoff)
             if wait is None or failures >= POLL_ERROR_ATTEMPTS:
+                # Out of retries, the error's own advice ("wait, then retry") no longer applies.
+                gave_up = f"Stopped waiting after {POLL_ERROR_ATTEMPTS} failed status checks in a row. "
                 error.hint = (
-                    f"{error.hint + ' ' if error.hint else ''}Request {record.request_id} is still on the "
-                    f"API side; its record is in {project.requests_dir}, so it can be checked again later."
+                    f"{gave_up if wait is not None else (error.hint + ' ' if error.hint else '')}"
+                    f"Nothing is lost: Request {record.request_id} is still on the API side and its record is in "
+                    f"{project.requests_dir}; run `higgs sync` later to download it."
                 )
                 raise
             clock.sleep(wait)
