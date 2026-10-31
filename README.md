@@ -249,7 +249,9 @@ Each row has the name, the id and the Models (`--model`) that take it; `--json` 
 `{"catalog", "presets": [{"id", "name", "description", "group", "aspect_ratio", "preview_url", "models"}]}`.
 
 `--preset <name or id>` on `higgs image t2i|i2i` and `higgs video restyle` looks the name up (case-insensitively;
-an id works too) in the catalog of the chosen Model, fetched live, and sends its id in the Model's parameter:
+an id works too) in the catalog of the chosen Model, fetched live, and sends its id in the Model's parameter.
+Every other `higgs image`/`higgs video` command accepts `--preset` too, but fails with `unsupported_flag` (exit 1,
+a JSON error under `--json`) when the chosen Model has no Preset catalog:
 
 | Model | Catalog | Parameter |
 |---|---|---|
