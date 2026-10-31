@@ -44,7 +44,7 @@ class SavedReference(BaseModel):
     metadata_path: Path
     # The copied Artifacts, renamed after the Reference.
     artifacts: list[Path]
-    # Reference files replaced by `--force` (their `.json` went with them).
+    # Reference files replaced by `--force` (their `.json` and Artifacts went with them).
     replaced: list[Path]
 
 

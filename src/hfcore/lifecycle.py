@@ -87,43 +87,82 @@ def _submit_with_retries(
     """Submit, retrying ambiguous failures (network, 5xx) and a full queue (429).
 
     Every attempt carries the same Idempotency-Key, so the API creates (and bills) the
-    Request at most once even when an earlier attempt did reach it.
+    Request at most once even when an earlier attempt did reach it. When the submit fails
+    for good after any attempt that may have reached the API, the error is a `SubmitFailed`
+    saying so, whatever the last attempt's answer was.
     """
     backoff = Backoff()
+    may_exist = False  # some attempt got no answer or a 5xx, so the Request may exist
     for attempt in range(1, SUBMIT_ATTEMPTS + 1):
         try:
             return client.submit(endpoint, params, idempotency_key=idempotency_key)
         except HiggsError as error:
+            may_exist = may_exist or _may_have_reached_api(error)
             wait = retry_wait(error, backoff, submit=True)
             if wait is None:
-                raise
+                if attempt == 1 or not may_exist:
+                    raise
+                hint = _join(error.hint, _may_exist_hint(idempotency_key, "An earlier attempt got no answer, so"))
+                raise SubmitFailed(error, may_exist=True, hint=hint) from error
             if attempt == SUBMIT_ATTEMPTS:
-                error.hint = _submit_gave_up_hint(error, idempotency_key)
-                raise
+                raise SubmitFailed(
+                    error, may_exist=may_exist, hint=_submit_gave_up_hint(may_exist, idempotency_key)
+                ) from error
             clock.sleep(wait)
     raise AssertionError("unreachable")
 
 
-def _submit_gave_up_hint(error: HiggsError, idempotency_key: str) -> str:
+class SubmitFailed(HiggsError):
+    """A submit that failed for good after retries: the last error, with what it means.
+
+    `may_exist` is whether any attempt may have reached the API (no answer, or a 5xx), so
+    that the Request may exist and be billed under its Idempotency-Key. The code, message
+    and JSON fields are the last error's; only the hint is this one's.
+    """
+
+    def __init__(self, error: HiggsError, *, may_exist: bool, hint: str):
+        super().__init__(error.message, hint=hint, code=error.code)
+        self.error = error
+        self.may_exist = may_exist
+
+    def to_dict(self) -> dict[str, Any]:
+        data = self.error.to_dict()
+        data["hint"] = self.hint
+        return data
+
+
+def submit_may_exist(error: HiggsError) -> bool:
+    """Whether the Request whose submit failed with `error` may have been created after all."""
+    return isinstance(error, SubmitFailed) and error.may_exist
+
+
+def _submit_gave_up_hint(may_exist: bool, idempotency_key: str) -> str:
     """What happened and what to do once `SUBMIT_ATTEMPTS` retryable failures in a row are used up."""
-    if not submit_may_have_reached_api(error):
+    if not may_exist:
         return (
             f"This Request was not submitted or charged (the API refused all {SUBMIT_ATTEMPTS} attempts). Retry once "
             "running Requests finish; `higgs list --status pending` shows this Project's."
         )
+    return _may_exist_hint(idempotency_key, f"Gave up after {SUBMIT_ATTEMPTS} attempts.")
+
+
+def _may_exist_hint(idempotency_key: str, lead: str) -> str:
     return (
-        f"Gave up after {SUBMIT_ATTEMPTS} attempts. The submit may have reached the API (it would then run and be "
-        f"billed once, under Idempotency-Key {idempotency_key}), but no record was written, so higgs cannot track "
-        "it; check the Console before submitting again."
+        f"{lead} The submit may have reached the API (it would then run and be billed once, under "
+        f"Idempotency-Key {idempotency_key}), but no record was written, so higgs cannot track it; check the "
+        "Console before submitting again."
     )
 
 
-def submit_may_have_reached_api(error: HiggsError) -> bool:
-    """Whether a submit that failed with `error` may still have created (and will bill) the Request.
+def _join(hint: str | None, more: str) -> str:
+    return f"{hint} {more}" if hint else more
+
+
+def _may_have_reached_api(error: HiggsError) -> bool:
+    """Whether a submit attempt that failed with `error` may still have created the Request.
 
     True when no answer came (a network failure) or the API failed on its side (5xx, except a
-    disabled model): the Request may then exist under its Idempotency-Key. Any other answer
-    (4xx, including a full queue) means it was not submitted.
+    disabled model). Any other answer (4xx, including a full queue) means this attempt did not.
     """
     if isinstance(error, ApiError):
         return error.status >= 500 and error.code != "model_unavailable"
