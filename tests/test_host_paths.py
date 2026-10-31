@@ -100,20 +100,44 @@ def test_an_absolute_file_name_outside_the_projects_root_is_rejected(higgs, proj
     assert not respx_mock.calls
 
 
-@pytest.mark.parametrize("prompt", ["a logo for acme.com", "version v2.5", "16:9"])
+@pytest.mark.parametrize(
+    ("param", "value"),
+    [
+        ("prompt", "acme.com"),
+        ("prompt", "a logo for acme.com"),
+        ("prompt", "version v2.5"),
+        ("style", "film.noir"),
+        ("aspect_ratio", "16:9"),
+    ],
+)
 def test_plain_strings_from_outside_the_projects_root_are_still_sent_as_they_are(
-    higgs, project, desktop, api_key, respx_mock, estimate, prompt
+    higgs, project, desktop, api_key, respx_mock, estimate, param, value
 ):
+    # Only a media-URL param (`*_url`, `*_urls`) takes a dotted word for a file name.
     submit = respx_mock.post(f"https://api.higgsfield.ai/{ENDPOINT}").mock(
         return_value=httpx.Response(200, json={"status": "queued", "request_id": "req-1"})
     )
 
     result = higgs(
-        "gen", ENDPOINT, "-p", f"prompt={prompt}", "--project", "demo", "--no-validate", "--no-wait", "--json", "--yes"
+        "gen", ENDPOINT, "-p", f"{param}={value}", "--project", "demo", "--no-validate", "--no-wait", "--json", "--yes"
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(submit.calls.last.request.content)["prompt"] == prompt
+    assert json.loads(submit.calls.last.request.content)[param] == value
+
+
+def test_a_file_name_in_a_url_list_from_outside_the_projects_root_is_rejected(
+    higgs, project, desktop, api_key, respx_mock
+):
+    result = higgs(
+        "gen", ENDPOINT, "-p", "prompt=a cat", "-p", 'image_urls=["https://cdn.example.com/a.png","b.heic"]',
+        "--project", "demo", "--no-validate", "--no-wait", "--json", "--yes",
+    )
+
+    error = error_of(result)
+    assert error["code"] == "input_outside_projects_root"
+    assert "b.heic" in error["message"]
+    assert not respx_mock.calls
 
 
 @pytest.mark.parametrize("command", [("pick",), ("ref", "save")])

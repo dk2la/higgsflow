@@ -140,8 +140,13 @@ API_ERRORS = [
     (403, {"detail": "Insufficient balance"}, "insufficient_funds"),
     (403, {"code": "insufficient_balance", "detail": "Top up to continue."}, "insufficient_funds"),
     # Any other 403, e.g. a member calling an admin-only operation ("Organizations and roles").
+    (403, {"detail": "Not enough funds on the account"}, "insufficient_funds"),
+    (403, {"detail": "Your balance is too low"}, "insufficient_funds"),
     (403, {"detail": "Forbidden"}, "forbidden"),
     (403, {"code": "permission_denied", "detail": "Admins only"}, "forbidden"),
+    # Mentioning money is not a balance problem (#46).
+    (403, {"detail": "Only admins can view billing and balance"}, "forbidden"),
+    (403, {"detail": "Members cannot add funds"}, "forbidden"),
     (404, {"detail": "Not Found"}, "model_unavailable"),
     (423, {"detail": "Model is temporarily blocked"}, "model_unavailable"),
     (503, {"detail": "Model is disabled"}, "model_unavailable"),

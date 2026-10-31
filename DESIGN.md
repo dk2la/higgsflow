@@ -156,10 +156,11 @@ root that is the container's working directory too. From one outside it the cont
 root, but paths still resolve against the (unmounted) host folder, so they fail as
 `input_outside_projects_root` (Inputs, `--prompt-file`, Soul ID images, Generation paths) instead of
 silently naming a file in the projects root (#44); a prompt file inside the projects root but outside the
-Project is `prompt_file_outside_project`. Nothing outside the projects root can be checked on disk, so there a
-`-p` value counts as an Input when it looks like a file name (no whitespace, an extension starting with a
-letter: `photo.heic`, `~/Desktop/clip.mov`, not `v2.5` or a prompt) and every non-URL `soul train` image is
-taken as a file. A bare Generation file name is still looked up in the Project's `generations/`.
+Project is `prompt_file_outside_project`. Nothing outside the projects root can be checked on disk, so there
+the value of a media-URL param (`*_url` / `*_urls`, the API's naming for every media input: `image_url`,
+`video_urls[0]`) counts as an Input when it looks like a file name (no whitespace, an extension starting with
+a letter: `photo.heic`, `~/Desktop/clip.mov`), and every non-URL `soul train` image is taken as a file. Other
+params never are: `--prompt acme.com` or `-p style=film.noir` is sent as typed wherever higgs runs. A bare Generation file name is still looked up in the Project's `generations/`.
 
 **Generation naming:**
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN.<ext>`,
@@ -340,11 +341,11 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   the submits; the Requests already submitted are still waited for and listed, and each unsubmitted body is an
   item `{"request_id": null, "error", "warnings"}`, the error's hint naming the submitted ids ("1 of the 3
   Requests was submitted before this (req-1) and is billed once it completes; the other 2 were not submitted").
-  When the submit gave up on network/5xx failures, the Request it was submitting may exist after all
-  (`hfcore.lifecycle.submit_may_have_reached_api`), so the hint says "this one may have been submitted too
+  When any attempt of that submit got no answer or a 5xx, the Request it was submitting may exist after all
+  (`hfcore.lifecycle.SubmitFailed.may_exist`), so the hint says "this one may have been submitted too
   (see above), and the other 1 was not submitted" instead. If the first submit fails, the error is raised as
-  usual, its hint adding "None of the 3 Requests was submitted" (after a refusal such as a 429) or "The other
-  2 Requests were not submitted" (after network/5xx failures). In text mode one problem
+  usual, its hint adding "None of the 3 Requests was submitted" (every attempt refused, e.g. 429s) or "The
+  other 2 Requests were not submitted" (some attempt got no answer or a 5xx). In text mode one problem
   is raised as itself, several as `requests_unfinished` listing them all. `higgs gen` submits one Request, so a
   failure there is the usual top-level JSON error.
 - **Images (#18; `hfcli.image`).** `higgs image t2i` reaches the 14 `t2i` Endpoints (also the Models that take
@@ -458,9 +459,11 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 4. Submit `POST /{endpoint}` with an `Idempotency-Key` (UUID); immediately write `.hf/requests/<request_id>.json`.
    A network failure, timeout or `5xx` (other than a disabled model) and a `429` (after `Retry-After`) are
    retried with the same key, so a retried submit is never billed twice — at most `SUBMIT_ATTEMPTS` (5)
-   attempts in all (`hfcore.lifecycle`). Giving up after a `429` says this Request was not submitted or charged and
-   points to `higgs list --status pending` (retry once running Requests finish); giving up after network/5xx
-   failures says the submit may have reached the API under its Idempotency-Key, with no local record.
+   attempts in all (`hfcore.lifecycle`). Giving up after `429`s only says this Request was not submitted or
+   charged and points to `higgs list --status pending` (retry once running Requests finish). If any attempt got
+   no answer or a 5xx, the error (a `SubmitFailed`, keeping the last error's code and fields) says instead that
+   the submit may have reached the API under its Idempotency-Key, with no local record — also when the last
+   attempt was refused (four timeouts, then a 429) or failed for good (a timeout, then a 403).
 5. Polling `GET /requests/{id}/status`: 2 s → backoff up to 10 s + jitter.
    `429 account_queue_full` → wait for `Retry-After`; `503` and network failures → retry with backoff.
    After `POLL_ERROR_ATTEMPTS` (8) failed checks in a row the wait ends with that error; the record stays
@@ -503,7 +506,9 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
   or another refusal (a member calling an admin-only operation); 404/423/503 — model unavailable;
   422 — idempotency conflict. The docs show no `code` for the balance 403, so higgs reports
   `insufficient_funds` only for a balance-like `code` (`insufficient_balance`, …) or, when the body
-  has no `code`, a detail mentioning balance/funds. Every other 403 is `forbidden`: the API's detail
+  has no `code`, a detail saying the balance or funds are short ("Insufficient balance", "not enough funds",
+  "balance is too low"); a detail that only mentions them ("Only admins can view billing and balance") is
+  not one (#46). Every other 403 is `forbidden`: the API's detail
   plus a hint naming the possible causes (role permissions, the key, the balance).
 - Allowed upload types: jpeg/png/webp/gif, wav, mp4.
 

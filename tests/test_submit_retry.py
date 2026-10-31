@@ -100,6 +100,36 @@ def test_a_submit_that_keeps_failing_says_it_may_have_reached_the_api(higgs, pro
     assert "Idempotency-Key" in error["hint"]
 
 
+def test_a_refusal_after_timeouts_does_not_claim_nothing_was_submitted(higgs, project, api_key, respx_mock, clock):
+    # A timed-out attempt may have created the Request, whatever the last attempt's answer.
+    respx_mock.post(SUBMIT_URL).mock(
+        side_effect=[
+            *[httpx.ReadTimeout("timed out")] * 4,
+            httpx.Response(429, json=QUEUE_FULL, headers={"Retry-After": "30"}),
+        ]
+    )
+
+    error = json.loads(gen(higgs).output)["error"]
+
+    assert error["code"] == "queue_full"
+    assert error["status"] == 429
+    assert "not submitted or charged" not in error["hint"]
+    assert "may have reached the API" in error["hint"] and "Idempotency-Key" in error["hint"]
+
+
+def test_a_final_error_after_a_timeout_says_the_request_may_exist(higgs, project, api_key, respx_mock, clock):
+    route = respx_mock.post(SUBMIT_URL).mock(
+        side_effect=[httpx.ReadTimeout("timed out"), httpx.Response(403, json={"detail": "Insufficient balance"})]
+    )
+
+    error = json.loads(gen(higgs).output)["error"]
+
+    assert route.call_count == 2
+    assert error["code"] == "insufficient_funds"
+    assert "Add funds" in error["hint"]
+    assert "An earlier attempt got no answer" in error["hint"] and "Idempotency-Key" in error["hint"]
+
+
 def test_a_disabled_model_is_not_retried(higgs, project, api_key, respx_mock, clock):
     route = respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(503, json={"detail": "Model is disabled"}))
 

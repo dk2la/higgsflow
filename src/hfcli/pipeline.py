@@ -5,10 +5,11 @@
 the Inputs → estimate every body → confirm the total price once → submit every body →
 (unless `no_wait`) wait for every Request and download the completed ones.
 
-A command then prints the `Batch` and fails if anything did not complete: `gen` and text
-output call `Batch.raise_unfinished()` after printing, a convenience command under `--json`
-prints `batch_json` and exits 1. So a failed Request still fails the command after the
-others were reported. One Request's trouble never hides the others: a Request that did
+A command then prints the `Batch` and fails if anything did not complete. As text it prints
+each Request and then calls `Batch.raise_unfinished()`; under `--json` a convenience command
+prints `batch_json` and exits 1, while `gen` (one Request) calls `Batch.raise_unfinished()`
+first, so an unfinished Request is the usual top-level JSON error. Either way a failed Request
+still fails the command after the others were reported. One Request's trouble never hides the others: a Request that did
 not complete, or whose wait or download gave up, keeps its error on its own result, and a
 submit that gives up partway through `--count N` stops the submits but the Requests already
 submitted (and billed once they complete) are still waited for and reported. In `--json`
@@ -137,7 +138,7 @@ def run_requests(
 
 def _none_submitted(error: HiggsError, requested: int) -> str:
     """What the first submit of `--count N` giving up means for the whole batch."""
-    if not lifecycle.submit_may_have_reached_api(error):
+    if not lifecycle.submit_may_exist(error):
         return f"None of the {requested} Requests was submitted."
     others = requested - 1
     return f"The other {others} {_requests(others)} {_were(others)} not submitted."
@@ -146,15 +147,15 @@ def _none_submitted(error: HiggsError, requested: int) -> str:
 def _partly_submitted(batch: Batch, requested: int) -> str:
     """What a submit giving up partway through `--count N` means for the whole batch.
 
-    The Request whose submit gave up counts as not submitted only when the API refused it;
-    after a network failure or a 5xx it may exist and be billed (its error says so).
+    The Request whose submit gave up counts as not submitted only when the API refused every
+    attempt; after a network failure or a 5xx it may exist and be billed (its error says so).
     """
     assert batch.submit_error is not None
     submitted = len(batch.results)
     ids = ", ".join(result.record.request_id for result in batch.results)
     billed = "is billed once it completes" if submitted == 1 else "are billed once they complete"
     done = f"{submitted} of the {requested} Requests {_were(submitted)} submitted before this ({ids}) and {billed}"
-    if not lifecycle.submit_may_have_reached_api(batch.submit_error):
+    if not lifecycle.submit_may_exist(batch.submit_error):
         return f"{done}; the other {batch.not_submitted} {_were(batch.not_submitted)} not submitted."
     rest = batch.not_submitted - 1
     tail = f", and the other {rest} {_were(rest)} not submitted." if rest else "."

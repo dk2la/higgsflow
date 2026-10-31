@@ -92,7 +92,7 @@ def check_params(endpoint: Endpoint, params: dict[str, Any], *, cwd: Path) -> li
     """Every problem of `params` for `endpoint`; empty when they are valid."""
     if endpoint.source == "api":
         return []  # only listed by GET /models: no schema to check against (DESIGN.md §6)
-    as_sent = {key: _as_uploaded(value, cwd) for key, value in params.items()}
+    as_sent = {key: _as_uploaded(value, key, cwd) for key, value in params.items()}
     # The API fills an omitted parameter with its default, so conditional rules
     # (`if multi_shots is true`) must see it too; a bare `if` would match a missing key.
     defaults = {p.name: p.default for p in endpoint.parameters if p.default is not None and p.name not in as_sent}
@@ -107,13 +107,14 @@ def check_params(endpoint: Endpoint, params: dict[str, Any], *, cwd: Path) -> li
     return sorted(unique.values(), key=lambda problem: problem.param)
 
 
-def _as_uploaded(value: Any, cwd: Path) -> Any:
+def _as_uploaded(value: Any, param: str, cwd: Path) -> Any:
+    """`value` with each Input replaced by a stand-in URL; `param` names where it sits, as `inputs` walks."""
     if isinstance(value, str):
-        return _UPLOADED + Path(value).name if inputs.is_input(value, cwd) else value
+        return _UPLOADED + Path(value).name if inputs.is_input(value, param, cwd) else value
     if isinstance(value, list):
-        return [_as_uploaded(item, cwd) for item in value]
+        return [_as_uploaded(item, f"{param}[{index}]", cwd) for index, item in enumerate(value)]
     if isinstance(value, dict):
-        return {key: _as_uploaded(item, cwd) for key, item in value.items()}
+        return {key: _as_uploaded(item, f"{param}.{key}", cwd) for key, item in value.items()}
     return value
 
 
