@@ -303,7 +303,10 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
 - **`--count N`:** the N bodies differ only in `seed` where the Endpoint has one: `--seed S` → S, S+1, ...;
   without it distinct random seeds in the parameter's range. All N go through one `hfcli.pipeline.run_requests`
   (shared with `higgs gen`): validate all → upload → estimate all → one confirmation → submit all → wait for
-  and download all. `--json` of a convenience command is always a list with one object per Request.
+  and download all. `--json` of a convenience command is always a list with one object per Request; one that
+  did not complete keeps its place with an `error` object (`RequestNotCompleted.to_dict()`: `code`, `message`,
+  `hint`, `request_id`, `status`) and no `generations`, the list is printed in full and the command then exits 1
+  (#45). `higgs gen` submits one Request, so a failure there is the usual top-level JSON error.
 - **Images (#18; `hfcli.image`).** `higgs image t2i` reaches the 14 `t2i` Endpoints (also the Models that take
   optional reference images), `higgs image i2i` Qwen Image 3 edit; Ads Studio (`ads`) stays `higgs gen`-only,
   so `higgs image t2i -m ads-studio` is `unknown_mode`. Both take `--model`, `--prompt`/`--prompt-file`,

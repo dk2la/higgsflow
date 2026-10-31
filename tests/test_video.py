@@ -453,6 +453,41 @@ def test_a_failed_request_fails_the_command_after_the_others_are_downloaded(
     assert json.loads((project / ".hf" / "requests" / "req-1.json").read_text())["status"] == "failed"
 
 
+def test_json_with_count_reports_every_request_when_one_does_not_complete(
+    higgs, project, api_key, respx_mock, estimate
+):
+    mock_submit(respx_mock, WAN_T2V)
+
+    def status(request: httpx.Request) -> httpx.Response:
+        request_id = request.url.path.split("/")[2]
+        if request_id == "req-2":
+            return httpx.Response(200, json={"status": "nsfw", "request_id": request_id})
+        url = f"https://cdn.example.com/{request_id}.mp4"
+        return httpx.Response(200, json={"status": "completed", "request_id": request_id, "video": {"url": url}})
+
+    respx_mock.get(url__regex=rf"{API}/requests/req-\d+/status").mock(side_effect=status)
+    respx_mock.get(url__regex=r"https://cdn.example.com/req-\d+.mp4").mock(
+        side_effect=lambda request: httpx.Response(200, content=request.url.path.encode())
+    )
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--name", "waves", "--count", "3",
+                   "--json", "--yes")
+
+    assert result.exit_code == 1
+    output = json.loads(result.output)  # one JSON document: every Request, finished or not
+    assert [item["request_id"] for item in output] == ["req-1", "req-2", "req-3"]
+    assert [item["record"]["status"] for item in output] == ["completed", "nsfw", "completed"]
+    assert [Path(output[index]["generations"][0]["path"]).name for index in (0, 2)] == [
+        "20261030-1200_wan-2-7_t2v_waves_v01.mp4",
+        "20261030-1200_wan-2-7_t2v_waves_v03.mp4",
+    ]
+    assert "error" not in output[0] and "error" not in output[2]
+    assert "generations" not in output[1]
+    assert output[1]["error"]["code"] == "request_nsfw"
+    assert output[1]["error"]["request_id"] == "req-2"
+    assert output[1]["error"]["status"] == "nsfw"
+
+
 def test_p_parameters_reach_the_body_and_win_over_flags(higgs, project, api_key, respx_mock, estimate):
     route = mock_submit(respx_mock, "kling-video/v2.6/pro/text-to-video")
 
