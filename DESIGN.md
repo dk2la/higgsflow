@@ -339,7 +339,7 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   list's Endpoints); a style both SOUL lists have is shown once with both Models. `--preset` matches the id or
   the name case-insensitively among the Presets of the chosen Endpoint's own lists (a SOUL V2 style is not a
   SOUL one). Errors: an Endpoint in no list → `unsupported_flag` (before any API call, listing the Models per
-  catalog); no match → `unknown_preset` with `difflib` close names; a name several Presets share →
+  catalog and the commands that take Presets); no match → `unknown_preset` with `difflib` close names; a name several Presets share →
   `ambiguous_preset` with their ids (and groups). Marketing Studio's `preset_id` only works with prompt
   enhancement (the docs: `enhance_prompt=true` requires `preset_id` and 1–2 `image_urls`), so the source adds
   `enhance_prompt: true` below `-p`. A test checks that every catalog Endpoint whose schema has a `style_id` or
