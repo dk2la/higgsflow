@@ -159,6 +159,26 @@ def test_polling_gives_up_after_repeated_errors_and_keeps_the_record(higgs, proj
     assert record["status"] == "queued"
 
 
+def test_polling_a_full_queue_gives_up_after_eight_checks_and_points_to_sync(higgs, project, api_key, respx_mock, clock):
+    respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(200, json=SUBMITTED))
+    status = respx_mock.get(STATUS_URL).mock(
+        return_value=httpx.Response(429, json=QUEUE_FULL, headers={"Retry-After": "30"})
+    )
+
+    result = gen(higgs)
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "queue_full"
+    # POLL_ERROR_ATTEMPTS = 8 consecutive failed checks, with a Retry-After wait between them.
+    assert status.call_count == 8
+    assert clock.waits == [30.0] * 7
+    assert REQUEST_ID in error["hint"]
+    assert "higgs sync" in error["hint"]
+    record = json.loads((project / ".hf" / "requests" / f"{REQUEST_ID}.json").read_text())
+    assert record["status"] == "queued"
+
+
 def test_an_authentication_error_while_polling_is_not_retried(higgs, project, api_key, respx_mock, clock):
     respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(200, json=SUBMITTED))
     route = respx_mock.get(STATUS_URL).mock(return_value=httpx.Response(401, json={"detail": "Invalid credentials"}))

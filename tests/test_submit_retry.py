@@ -73,6 +73,33 @@ def test_a_full_queue_on_submit_waits_for_retry_after_and_resubmits(higgs, proje
     assert len(set(keys(route))) == 1
 
 
+def test_a_queue_that_stays_full_gives_up_and_says_nothing_was_submitted(higgs, project, api_key, respx_mock, clock):
+    route = respx_mock.post(SUBMIT_URL).mock(
+        return_value=httpx.Response(429, json=QUEUE_FULL, headers={"Retry-After": "30"})
+    )
+
+    result = gen(higgs)
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "queue_full"
+    # SUBMIT_ATTEMPTS = 5: four waits for Retry-After, then the fifth refusal is final.
+    assert route.call_count == 5
+    assert clock.waits == [30.0] * 4
+    assert "Nothing was submitted or charged" in error["hint"]
+    assert "higgs list --status pending" in error["hint"]
+    assert not list((project / ".hf" / "requests").iterdir())
+
+
+def test_a_submit_that_keeps_failing_says_it_may_have_reached_the_api(higgs, project, api_key, respx_mock, clock):
+    respx_mock.post(SUBMIT_URL).mock(side_effect=httpx.ReadTimeout("timed out"))
+
+    error = json.loads(gen(higgs).output)["error"]
+
+    assert "may have reached the API" in error["hint"]
+    assert "Idempotency-Key" in error["hint"]
+
+
 def test_a_disabled_model_is_not_retried(higgs, project, api_key, respx_mock, clock):
     route = respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(503, json={"detail": "Model is disabled"}))
 

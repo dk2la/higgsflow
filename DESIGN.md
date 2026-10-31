@@ -413,9 +413,15 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
    estimates every Request and confirms their total once.
 4. Submit `POST /{endpoint}` with an `Idempotency-Key` (UUID); immediately write `.hf/requests/<request_id>.json`.
    A network failure, timeout or `5xx` (other than a disabled model) and a `429` (after `Retry-After`) are
-   retried a few times with the same key, so a retried submit is never billed twice.
+   retried with the same key, so a retried submit is never billed twice — at most `SUBMIT_ATTEMPTS` (5)
+   attempts in all (`hfcore.lifecycle`). Giving up after a `429` says nothing was submitted or charged and
+   points to `higgs list --status pending` (retry once running Requests finish); giving up after network/5xx
+   failures says the submit may have reached the API under its Idempotency-Key, with no local record.
 5. Polling `GET /requests/{id}/status`: 2 s → backoff up to 10 s + jitter.
-   `429 account_queue_full` → wait for `Retry-After`; `503` → retry with backoff.
+   `429 account_queue_full` → wait for `Retry-After`; `503` and network failures → retry with backoff.
+   After `POLL_ERROR_ATTEMPTS` (8) failed checks in a row the wait ends with that error; the record stays
+   and the hint says to run `higgs sync` later (the caps are deliberate, #50: a command never hangs on a
+   busy account, and nothing is lost by stopping).
 6. Terminal statuses: `completed`, `failed`, `nsfw`, `canceled` (failed/nsfw/canceled are not billed).
 7. Auto-download of the result + write the `.json` next to it. Links stop working at `expires_at`
    from the status response; it is stored in the Request's `.json`, and `download` fails early once it has passed.
