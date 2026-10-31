@@ -29,13 +29,20 @@ new features (while the major version is 0, a minor bump may also break things).
 1. Open a release pull request **`develop` → `master`**, titled `Release vX.Y.Z`. It bumps
    `version` in `pyproject.toml` and lists the changes since the last release.
 2. The release pull request is reviewed together and merged by the maintainer.
-3. Tag the merge commit on `master` and publish a GitHub Release:
+3. Tag the release pull request's merge commit on `master` by its SHA, so the tag cannot
+   land on a later commit, and publish a GitHub Release:
 
    ```sh
-   git tag -a vX.Y.Z -m "higgsflow X.Y.Z" origin/master
+   git fetch origin
+   git log -1 --format='%H %s' origin/master   # "Merge pull request #N from …/develop"
+   git tag -a vX.Y.Z -m "higgsflow X.Y.Z" <merge-sha>
    git push origin vX.Y.Z
-   gh release create vX.Y.Z --verify-tag --generate-notes
+   gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file notes.md
+   gh release list --limit 3                    # vX.Y.Z is marked Latest
    ```
+
+   `notes.md` is the release pull request's description, without its after-merge to-do
+   list, plus any pull request merged into `develop` after that description was written.
 
 ## Hotfixes
 
