@@ -106,11 +106,19 @@ unreadable file fails every Soul ID command (`invalid_souls_file`) and is never 
 the only record of the ids.
 
 **References:** any file in `references/` is a Reference, whether put there by hand or via
-`higgs ref save` (which copies the Generation together with its `.json`). A Reference name is unique
+`higgs ref save` (`hfcore.generations.save_reference`). `ref save` finds and checks the Generation exactly
+like `pick` (`find_generation` + `check_generation`, the only lookup): it must be in `generations/` with its
+`.json` and every Artifact present, else `not_a_generation` / `generation_metadata_missing` /
+`generation_not_found` / `artifact_missing`. It copies the Generation, its `.json` and every Artifact, each
+renamed after the Reference (the Generation's base name swapped for `<name>`: `hero.mov`, `hero-mov.mov`,
+`hero.fbx`), and the copied `.json` lists the Artifacts under their new names. A Reference name is unique
 regardless of extension (`hero.png` and `hero.mp4` cannot coexist); `ref save` to a taken name fails
-unless `--force` (which replaces the old Reference and its `.json`, whatever its extension); an ambiguous
-`@name` fails and lists the matches, an unknown one lists the Project's References (close matches first).
-The `.json` files and hidden files in `references/` are not References. A parameter value is a Reference
+unless `--force` (which replaces the old Reference, its `.json` and the Artifacts it lists, whatever its
+extension); a file the save would write that belongs to no replaced Reference fails it with
+`reference_exists`. Everything is staged in hidden files first, so a failed save leaves `references/`
+untouched. An ambiguous `@name` fails and lists the matches, an unknown one lists the Project's References
+(close matches first). The `.json` files, hidden files and the Artifacts a Reference's `.json` lists are
+not References. A parameter value is a Reference
 when it is exactly `@name` with no whitespace; a value starting with `@@` is sent with one `@` removed
 (`@@hero` → the literal string `@hero`).
 

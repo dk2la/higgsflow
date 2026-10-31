@@ -317,9 +317,15 @@ literal string starting with `@`, double it: `-p style=@@hero` sends `@hero` (te
 ```sh
 higgs ref save generations/2026-10-30/<file>.png hero   # copies the Generation + its .json to references/hero.png
 higgs ref save <file>.png hero --force                  # a bare Generation file name works too; --force replaces
-                                                        # an existing @hero (any extension) and its .json
+                                                        # an existing @hero (any extension), its .json and Artifacts
 higgs ref list                                          # References with type, size and source Generation
 ```
+
+`ref save` takes the same Generations as `higgs pick`: a file in the Project's `generations/` with its `.json`
+(anything else fails with `not_a_generation`, `generation_metadata_missing` or `generation_not_found`; a plain
+file becomes a Reference by copying it into `references/` yourself). The Generation's Artifacts are copied too,
+renamed after the Reference (`hero.mov` with `hero-mov.mov` and `hero.fbx`), and the copied `.json` lists them
+under those names; they travel with `@hero` and are not References of their own.
 
 `higgs gen` validates the parameters against the Endpoint in the catalog before anything is uploaded or sent:
 required parameters, types, allowed values, ranges, string lengths, array sizes, the schema's conditional rules,
