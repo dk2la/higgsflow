@@ -25,6 +25,14 @@ The wrapper mounts, at identical absolute paths:
 - `~/.config/higgs/` (credentials, config, user catalog), read-write.
 
 Only the projects root is visible inside the container, so files you pass to `higgs` must live in a Project.
+Relative paths are relative to the folder you typed them in: from a folder outside the projects root
+(`cd ~/Desktop; higgs gen … --project demo -p image_url=photo.jpg`) they fail with
+`input_outside_projects_root` and a hint to copy the file into the Project's `inputs/`, never silently naming a
+file in the projects root. The same goes for `--prompt-file` (copy it into `prompts/`), `soul train` images and
+the Generation of `pick`/`ref save`. Since higgs cannot see that folder, a media-URL param there (`image_url`,
+`video_urls`, …) whose value looks like a file name (`photo.heic`: no spaces, an extension) is taken as one;
+prompts and other params are sent as typed. A bare Generation file name for
+`pick`/`ref save` is still looked up in the Project.
 The wrapper also passes the host's time zone (`TZ`, from `$TZ` or the `/etc/localtime` symlink, else UTC),
 so the times in Generation names are local.
 
@@ -70,7 +78,10 @@ check, a completed one is downloaded exactly once (its record gets `downloaded_a
 canceled one is recorded and left alone, and one whose links have expired is reported without an API
 call. If a Request cannot be synced, the others still are and `sync` exits with an error; run it again.
 `download` fails before any API call once the Request's `expires_at` has passed or it was deleted with
-`higgs delete`. `list` reads only `.hf/requests/` (no API calls, no key needed); `--status` is repeatable
+`higgs delete`. `list` reads only local files (no API calls, no key needed): the Request records in
+`.hf/requests/` and the Generation `.json` files in `generations/`, so each Request shows its Generation files,
+and one whose record is missing (a Project copied without `.hf/`) still appears, marked `recovered` (in
+`--json`: `"generations": [...]`, `"recovered": true|false` on every item). `--status` is repeatable
 (`pending` = not finished yet), `--date` picks one day. `--model` takes a Model as `higgs models list` shows
 it (`kling-3.0` or `"Kling 3.0"`: every tier and Mode of that Model, not Kling 3.0 Turbo) and also matches
 any Request whose Endpoint id or model slug contains the text (`--model kling-video`, `--model soul`).
@@ -83,6 +94,15 @@ slug. The model slug and Mode come from the catalog, with the quality tier when 
 (`kling-video/v3.0/pro/image-to-video` → `kling-3-0-pro_i2v`); for an Endpoint the catalog lacks they come
 from the Endpoint id (see DESIGN.md §5). A failed, nsfw
 or canceled Request ends with an error and downloads nothing.
+
+Retries are capped, not endless. A submit that hits a full queue (429, after each `Retry-After`) or a
+transient error (network, 5xx) is tried 5 times with the same Idempotency-Key. When every attempt was refused
+(429) the error says that Request was not submitted or charged (and, with `--count N`, which earlier ones
+were), so retry once running Requests finish (`higgs list --status pending`). When any attempt got no answer or
+a 5xx it says the submit may have reached the API and be billed once, under the Idempotency-Key it names;
+check the Console before submitting it again.
+While waiting, 8 failed status checks in a row (429, 5xx, network) end the wait with an error; nothing is
+lost, the Request keeps running and `higgs sync` downloads it later.
 
 ### Video: `higgs video t2v|i2v|ref|vref|edit|extend|motion|restyle`
 
@@ -155,7 +175,22 @@ the Endpoint has a `seed`, each Request gets its own: `--seed S` gives S, S+1, S
 random seeds in the seed's range (a single Request without `--seed` sends none). A Model's own `batch_size`
 stays an ordinary `-p` parameter. Without `--no-wait` every Request is waited for and downloaded; one that
 fails fails the command after the others are downloaded. `--json` always prints a list, one object per Request
-(`request_id`, `path`, `record`, `generations` once downloaded, `warnings`), even for one Request.
+(`request_id`, `path`, `record`, `generations` once downloaded, `warnings`), even for one Request. A Request
+that ended `failed`, `nsfw` or `canceled` stays in the list, without `generations` and with
+`error: {code, message, hint, request_id, status}` (`request_nsfw`, ...); the others keep their downloaded
+files, and the exit code is 1 when any Request did not complete. A Request whose wait or download gave up keeps
+its place with that error too (`higgs sync` finishes it later). If a submit gives up partway (say the 2nd of 3
+on a full queue), the rest are not submitted: each gets an item `{"request_id": null, "error": ...}` whose hint
+names the Requests that were submitted (and are billed once they complete), and those are still waited for and
+downloaded. If that submit gave up on network or 5xx failures, the hint says the Request it was submitting may
+have been submitted too:
+
+```json
+[
+  {"request_id": "req-1", "record": {"status": "completed", ...}, "generations": [{"path": ".../..._v01.mp4", ...}], ...},
+  {"request_id": "req-2", "record": {"status": "nsfw", ...}, "error": {"code": "request_nsfw", "request_id": "req-2", "status": "nsfw", ...}, ...}
+]
+```
 
 ### Images: `higgs image t2i|i2i`
 
@@ -249,7 +284,9 @@ Each row has the name, the id and the Models (`--model`) that take it; `--json` 
 `{"catalog", "presets": [{"id", "name", "description", "group", "aspect_ratio", "preview_url", "models"}]}`.
 
 `--preset <name or id>` on `higgs image t2i|i2i` and `higgs video restyle` looks the name up (case-insensitively;
-an id works too) in the catalog of the chosen Model, fetched live, and sends its id in the Model's parameter:
+an id works too) in the catalog of the chosen Model, fetched live, and sends its id in the Model's parameter.
+Every other `higgs image`/`higgs video` command accepts `--preset` too, but fails with `unsupported_flag` (exit 1,
+a JSON error under `--json`) when the chosen Model has no Preset catalog:
 
 | Model | Catalog | Parameter |
 |---|---|---|
@@ -283,8 +320,8 @@ when they are valid JSON (`5`, `0.5`, `true`, `null`, `[...]`, `{...}`) and are 
 A `-p` value that is a local file is an Input: it is uploaded before the submit and replaced by its
 `public_url`, also inside lists and objects (`-p image_url=inputs/a.jpg`,
 `-p 'images=["inputs/a.jpg","inputs/b.png"]'`). A string counts as a file when it names an existing file
-(relative to the current directory, or absolute) or ends in `.jpg`/`.jpeg`/`.png`/`.webp`/`.gif`/`.wav`/`.mp4`
-(then a missing file is an error); URLs are left alone. The file must be inside the projects root (copy it
+(relative to the folder you ran `higgs` in, or absolute) or ends in
+`.jpg`/`.jpeg`/`.png`/`.webp`/`.gif`/`.wav`/`.mp4` (then a missing file is an error); URLs are left alone. The file must be inside the projects root (copy it
 into the Project's `inputs/` first) and really be a jpeg, png, webp, gif, wav or mp4, judged by its content.
 Uploads are cached by content in `.hf/uploads.json` and reused for up to 7 days, and the Request record lists
 the Inputs it used.
@@ -299,9 +336,15 @@ literal string starting with `@`, double it: `-p style=@@hero` sends `@hero` (te
 ```sh
 higgs ref save generations/2026-10-30/<file>.png hero   # copies the Generation + its .json to references/hero.png
 higgs ref save <file>.png hero --force                  # a bare Generation file name works too; --force replaces
-                                                        # an existing @hero (any extension) and its .json
+                                                        # an existing @hero (any extension), its .json and Artifacts
 higgs ref list                                          # References with type, size and source Generation
 ```
+
+`ref save` takes the same Generations as `higgs pick`: a file in the Project's `generations/` with its `.json`
+(anything else fails with `not_a_generation`, `generation_metadata_missing` or `generation_not_found`; a plain
+file becomes a Reference by copying it into `references/` yourself). The Generation's Artifacts are copied too,
+renamed after the Reference (`hero.mov` with `hero-mov.mov` and `hero.fbx`), and the copied `.json` lists them
+under those names; they travel with `@hero` and are not References of their own.
 
 `higgs gen` validates the parameters against the Endpoint in the catalog before anything is uploaded or sent:
 required parameters, types, allowed values, ranges, string lengths, array sizes, the schema's conditional rules,
@@ -326,7 +369,9 @@ have no schema, so they take any parameters without `--no-validate`.
 
 Describe an Endpoint the docs do not have (yet) in `~/.config/higgs/models.local.toml`; it then shows up in
 `higgs models list` / `models show` and `higgs gen` validates against it like against a documented one. Each
-`[[endpoint]]` table is one Endpoint, followed by one `[endpoint.parameters.<name>]` table per parameter:
+`[[endpoint]]` table is one Endpoint, followed by one `[endpoint.parameters.<name>]` table per parameter.
+There is no `alias` field: the slug of `model` (`"Kling 4.0"` → `kling-4.0`) is the name that `--model`,
+`higgs models show` and `higgs list --model` accept.
 
 ```toml
 [[endpoint]]

@@ -306,11 +306,11 @@ def test_ref_list_shows_each_reference_with_its_type_size_and_source(higgs, proj
     }
 
 
-def test_ref_save_and_list_as_text(higgs, project):
-    write(project / "inputs" / "a.png", PNG)
+def test_ref_save_and_list_as_text(higgs, project, api_key, respx_mock, estimate):
+    generation = make_generation(higgs, respx_mock)
     write(project / "references" / "hero.mp4", MP4)
 
-    saved = higgs("ref", "save", "inputs/a.png", "hero", "--force")
+    saved = higgs("ref", "save", generation, "hero", "--force")
     listed = higgs("ref", "list")
 
     assert saved.exit_code == 0, saved.output
@@ -319,3 +319,83 @@ def test_ref_save_and_list_as_text(higgs, project):
     assert listed.exit_code == 0, listed.output
     assert "@hero" in listed.output
     assert "hero.png" in listed.output
+
+
+def test_ref_save_of_a_file_outside_generations_fails_and_leaves_references_untouched(higgs, project):
+    # A plain file is not a Generation; it becomes a Reference only by copying it into references/ by hand.
+    write(project / "inputs" / "a.png", PNG)
+
+    result = higgs("ref", "save", "inputs/a.png", "hero", "--json")
+
+    assert result.exit_code == 1
+    assert error(result)["code"] == "not_a_generation"
+    assert not any((project / "references").iterdir())
+
+
+def test_ref_save_of_a_file_without_metadata_fails(higgs, project):
+    write(project / "generations" / "2026-10-30" / "stray.png", PNG)
+
+    result = higgs("ref", "save", "generations/2026-10-30/stray.png", "hero", "--json")
+
+    assert result.exit_code == 1
+    assert error(result)["code"] == "generation_metadata_missing"
+    assert "stray.png.json" in error(result)["message"]
+    assert not any((project / "references").iterdir())
+
+
+# A video with two Artifacts, one clashing with the video's extension (as in test_pick).
+WITH_ARTIFACTS = {
+    "video": {"url": "https://cdn.example.com/video.mov"},
+    "mov": {"url": "https://cdn.example.com/master.mov"},
+    "fbx": {"url": "https://cdn.example.com/scene.fbx"},
+}
+
+
+def make_generation_with_artifacts(higgs, respx_mock: respx.MockRouter) -> Path:
+    """Run a real `higgs gen` whose Generation has two Artifacts; returns the Generation's path."""
+    respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(200, json=SUBMITTED))
+    respx_mock.get(STATUS_URL).mock(
+        return_value=httpx.Response(200, json={"status": "completed", "request_id": REQUEST_ID, **WITH_ARTIFACTS})
+    )
+    for item in WITH_ARTIFACTS.values():
+        respx_mock.get(item["url"]).mock(return_value=httpx.Response(200, content=item["url"].encode()))
+    result = higgs("gen", ENDPOINT, "-p", "prompt=a red fox", "--no-validate", "--json", "--yes")
+    assert result.exit_code == 0, result.output
+    return Path(json.loads(result.output)["generations"][0]["path"])
+
+
+def test_ref_save_copies_the_artifacts_under_the_reference_name(higgs, project, api_key, respx_mock, estimate):
+    generation = make_generation_with_artifacts(higgs, respx_mock)
+
+    result = higgs("ref", "save", str(generation), "hero", "--json")
+
+    assert result.exit_code == 0, result.output
+    references = project / "references"
+    assert sorted(path.name for path in references.iterdir()) == ["hero-mov.mov", "hero.fbx", "hero.mov", "hero.mov.json"]
+    assert (references / "hero.mov").read_bytes() == b"https://cdn.example.com/video.mov"
+    assert (references / "hero-mov.mov").read_bytes() == b"https://cdn.example.com/master.mov"
+    assert (references / "hero.fbx").read_bytes() == b"https://cdn.example.com/scene.fbx"
+    # The copied metadata lists the Artifacts that are actually next to it.
+    metadata = json.loads((references / "hero.mov.json").read_text())
+    assert [entry["file"] for entry in metadata["artifacts"]] == ["hero-mov.mov", "hero.fbx"]
+    assert metadata["file"] == generation.name  # still names the Generation it came from
+    assert json.loads(result.output)["artifacts"] == [str(references / "hero-mov.mov"), str(references / "hero.fbx")]
+    # Artifacts travel with their Reference; they are not References of their own.
+    listed = json.loads(higgs("ref", "list", "--json").output)["references"]
+    assert [item["name"] for item in listed] == ["hero"]
+
+
+def test_ref_save_with_force_also_removes_the_old_references_artifacts(higgs, project, api_key, respx_mock, estimate):
+    generation = make_generation_with_artifacts(higgs, respx_mock)
+    assert higgs("ref", "save", str(generation), "hero", "--json").exit_code == 0
+    assert (project / "references" / "hero.fbx").is_file()
+    # A second Generation, without Artifacts, made from the first one's metadata.
+    write(project / "generations" / "2026-10-30" / "still.png", PNG)
+    plain = json.loads(generation.with_name(generation.name + ".json").read_text())
+    plain.update(file="still.png", artifacts=[])
+    (project / "generations" / "2026-10-30" / "still.png.json").write_text(json.dumps(plain))
+
+    result = higgs("ref", "save", "generations/2026-10-30/still.png", "hero", "--force", "--json")
+
+    assert result.exit_code == 0, result.output
+    assert sorted(path.name for path in (project / "references").iterdir()) == ["hero.png", "hero.png.json"]

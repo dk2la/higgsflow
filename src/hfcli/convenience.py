@@ -25,7 +25,6 @@ fetched live, see `hfcore.presets`), so a Preset name typed at the prompt is loo
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -34,13 +33,13 @@ from hfcore import flags as common_flags
 from hfcore import presets, prompts, souls
 from hfcore.api import ApiClient
 from hfcore.catalog import Catalog, Endpoint, load_catalog
-from hfcore.config import config_dir
+from hfcore.config import config_dir, working_dir
 from hfcore.credentials import load_credentials
 from hfcore.errors import HiggsError
 from hfcore.projects import load_config
 from hfcli.output import ask, print_json
 from hfcli.params import parse_params
-from hfcli.pipeline import echo_result, result_json, run_requests
+from hfcli.pipeline import batch_json, echo_result, run_requests
 from hfcli.projects import current_project
 
 ModelOpt = Annotated[str | None, typer.Option("--model", "-m", help="Model slug or name, e.g. kling-3.0.")]
@@ -138,7 +137,7 @@ def generate(
             raise HiggsError(
                 "--prompt and --prompt-file cannot be used together", hint="Pass one of them.", code="conflicting_flags"
             )
-        flags = {**flags, "prompt": prompts.read_prompt_file(target, prompt_file, cwd=Path.cwd())}
+        flags = {**flags, "prompt": prompts.read_prompt_file(target, prompt_file, cwd=working_dir())}
     defaults = common_flags.project_defaults(load_config(target).defaults, kind)
     endpoint, flags = _endpoint(ctx, load_catalog(config_dir()), mode, model, flags, defaults)
     if flags.get("soul") is not None:
@@ -154,8 +153,10 @@ def generate(
     bodies = common_flags.vary_seeds(endpoint, body, count)
     batch = run_requests(ctx, target, endpoint.id, bodies, name=name, yes=yes, no_wait=no_wait, quiet=as_json)
     if as_json:
-        batch.raise_unfinished()
-        print_json([result_json(result, batch.warnings) for result in batch.results])
+        # Every Request, finished or not, in one document; any that did not complete fails the command.
+        print_json(batch_json(batch))
+        if batch.unfinished:
+            raise typer.Exit(1)
         return
     for result in batch.results:
         echo_result(result, target)

@@ -87,18 +87,86 @@ def _submit_with_retries(
     """Submit, retrying ambiguous failures (network, 5xx) and a full queue (429).
 
     Every attempt carries the same Idempotency-Key, so the API creates (and bills) the
-    Request at most once even when an earlier attempt did reach it.
+    Request at most once even when an earlier attempt did reach it. When the submit fails
+    for good after any attempt that may have reached the API, the error is a `SubmitFailed`
+    saying so, whatever the last attempt's answer was.
     """
     backoff = Backoff()
+    may_exist = False  # some attempt got no answer or a 5xx, so the Request may exist
     for attempt in range(1, SUBMIT_ATTEMPTS + 1):
         try:
             return client.submit(endpoint, params, idempotency_key=idempotency_key)
         except HiggsError as error:
+            may_exist = may_exist or _may_have_reached_api(error)
             wait = retry_wait(error, backoff, submit=True)
-            if wait is None or attempt == SUBMIT_ATTEMPTS:
-                raise
+            if wait is None:
+                if attempt == 1 or not may_exist:
+                    raise
+                hint = _join(error.hint, _may_exist_hint(idempotency_key, "An earlier attempt got no answer, so"))
+                raise SubmitFailed(error, may_exist=True, hint=hint) from error
+            if attempt == SUBMIT_ATTEMPTS:
+                raise SubmitFailed(
+                    error, may_exist=may_exist, hint=_submit_gave_up_hint(may_exist, idempotency_key)
+                ) from error
             clock.sleep(wait)
     raise AssertionError("unreachable")
+
+
+class SubmitFailed(HiggsError):
+    """A submit that failed for good after retries: the last error, with what it means.
+
+    `may_exist` is whether any attempt may have reached the API (no answer, or a 5xx), so
+    that the Request may exist and be billed under its Idempotency-Key. The code, message
+    and JSON fields are the last error's; only the hint is this one's.
+    """
+
+    def __init__(self, error: HiggsError, *, may_exist: bool, hint: str):
+        super().__init__(error.message, hint=hint, code=error.code)
+        self.error = error
+        self.may_exist = may_exist
+
+    def to_dict(self) -> dict[str, Any]:
+        data = self.error.to_dict()
+        data["hint"] = self.hint
+        return data
+
+
+def submit_may_exist(error: HiggsError) -> bool:
+    """Whether the Request whose submit failed with `error` may have been created after all."""
+    return isinstance(error, SubmitFailed) and error.may_exist
+
+
+def _submit_gave_up_hint(may_exist: bool, idempotency_key: str) -> str:
+    """What happened and what to do once `SUBMIT_ATTEMPTS` retryable failures in a row are used up."""
+    if not may_exist:
+        return (
+            f"This Request was not submitted or charged (the API refused all {SUBMIT_ATTEMPTS} attempts). Retry once "
+            "running Requests finish; `higgs list --status pending` shows this Project's."
+        )
+    return _may_exist_hint(idempotency_key, f"Gave up after {SUBMIT_ATTEMPTS} attempts.")
+
+
+def _may_exist_hint(idempotency_key: str, lead: str) -> str:
+    return (
+        f"{lead} The submit may have reached the API (it would then run and be billed once, under "
+        f"Idempotency-Key {idempotency_key}), but no record was written, so higgs cannot track it; check the "
+        "Console before submitting again."
+    )
+
+
+def _join(hint: str | None, more: str) -> str:
+    return f"{hint} {more}" if hint else more
+
+
+def _may_have_reached_api(error: HiggsError) -> bool:
+    """Whether a submit attempt that failed with `error` may still have created the Request.
+
+    True when no answer came (a network failure) or the API failed on its side (5xx, except a
+    disabled model). Any other answer (4xx, including a full queue) means this attempt did not.
+    """
+    if isinstance(error, ApiError):
+        return error.status >= 500 and error.code != "model_unavailable"
+    return error.code == "network_error"
 
 
 def wait_for_request(
@@ -118,9 +186,12 @@ def wait_for_request(
             failures += 1
             wait = retry_wait(error, backoff)
             if wait is None or failures >= POLL_ERROR_ATTEMPTS:
+                # Out of retries, the error's own advice ("wait, then retry") no longer applies.
+                gave_up = f"Stopped waiting after {POLL_ERROR_ATTEMPTS} failed status checks in a row. "
                 error.hint = (
-                    f"{error.hint + ' ' if error.hint else ''}Request {record.request_id} is still on the "
-                    f"API side; its record is in {project.requests_dir}, so it can be checked again later."
+                    f"{gave_up if wait is not None else (error.hint + ' ' if error.hint else '')}"
+                    f"Nothing is lost: Request {record.request_id} is still on the API side (billed only if it "
+                    f"completes) and its record is in {project.requests_dir}; run `higgs sync` later to download it."
                 )
                 raise
             clock.sleep(wait)

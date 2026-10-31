@@ -1,20 +1,18 @@
 """References: named files in a Project's `references/`, addressed as `@name` (DESIGN.md §5).
 
 Any file in `references/` is a Reference, whether put there by hand or by `save_reference`
-(which copies a Generation together with its `<file>.json`). The name is the file name
-without its extension, and it is unique regardless of extension. The `.json` metadata
-files and hidden files are not References.
+(`hfcore.generations.save_reference`, which copies a Generation together with its
+`<file>.json` and its Artifacts). The name is
+the file name without its extension, and it is unique regardless of extension. The `.json`
+metadata files, hidden files and the Artifacts a Reference's `.json` lists are not References.
 """
 
 from __future__ import annotations
 
 import difflib
-import glob
 import json
 import mimetypes
-import os
 import re
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -42,9 +40,11 @@ class Reference(BaseModel):
 class SavedReference(BaseModel):
     name: str
     path: Path
-    # The copied `<file>.json`, if the Generation had one.
-    metadata_path: Path | None
-    # Reference files replaced by `--force` (their `.json` went with them).
+    # The copied `<file>.json`.
+    metadata_path: Path
+    # The copied Artifacts, renamed after the Reference.
+    artifacts: list[Path]
+    # Reference files replaced by `--force` (their `.json` and Artifacts went with them).
     replaced: list[Path]
 
 
@@ -57,11 +57,14 @@ def reference_files(project: Project) -> list[Path]:
     folder = references_dir(project)
     if not folder.is_dir():
         return []
-    return sorted(
+    files = [
         path
         for path in folder.iterdir()
         if path.is_file() and not path.name.startswith(".") and path.suffix.lower() != METADATA_SUFFIX
-    )
+    ]
+    # An Artifact saved with a Reference travels with it and is not a Reference of its own.
+    artifacts = {artifact for path in files for artifact in artifacts_of(path)}
+    return sorted(path for path in files if path not in artifacts)
 
 
 def list_references(project: Project) -> list[Reference]:
@@ -86,7 +89,7 @@ def list_references(project: Project) -> list[Reference]:
 def _read_metadata(path: Path) -> dict[str, Any]:
     """The Reference's `.json` (a copied Generation metadata), or {} if none or unreadable."""
     try:
-        data = json.loads(_metadata_path(path).read_text())
+        data = json.loads(metadata_path(path).read_text())
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -116,7 +119,7 @@ def resolve_reference(project: Project, name: str) -> Path:
     if len(found) == 1:
         return found[0]
     if found:
-        listed = ", ".join(_display(path, project) for path in found)
+        listed = ", ".join(display(path, project) for path in found)
         raise HiggsError(
             f"Reference @{name} is ambiguous: {listed}",
             hint="A Reference name must be unique regardless of extension; rename or remove all but one.",
@@ -131,95 +134,30 @@ def resolve_reference(project: Project, name: str) -> Path:
         else "This Project has no References yet."
     )
     raise HiggsError(
-        f"No Reference @{name} in {_display(references_dir(project), project)}/",
+        f"No Reference @{name} in {display(references_dir(project), project)}/",
         hint=f"{hint} Save one with `higgs ref save <generation> {name}` or put a file in references/; "
         "start a value with @@ to send a literal @.",
         code="reference_not_found",
     )
 
 
-def find_generation(project: Project, value: str, *, cwd: Path) -> Path:
-    """The Generation file `value` names: a path relative to `cwd`, or absolute, or a bare
-    file name found in the Project's `generations/<day>/`."""
-    path = cwd / Path(value).expanduser()
-    if path.is_file():
-        return path
-    found = []
-    if "/" not in value and "\\" not in value:
-        found = [path for path in (project.path / "generations").glob(f"*/{glob.escape(value)}") if path.is_file()]
-    if len(found) == 1:
-        return found[0]
-    if found:  # the same name on two days (only by hand: names start with the date)
-        listed = ", ".join(_display(path, project) for path in sorted(found))
-        raise HiggsError(
-            f"Generation {value} is ambiguous: {listed}",
-            hint="Pass the path of the one you mean.",
-            code="ambiguous_generation",
-        )
-    raise HiggsError(
-        f"Generation {value} not found",
-        hint="Pass the path of a Generation file (e.g. generations/YYYY-MM-DD/<file>.png) or its file name.",
-        code="generation_not_found",
-    )
+def artifacts_of(reference: Path) -> list[Path]:
+    """The Artifact files a Reference's `.json` lists (none for a Reference put there by hand)."""
+    entries = _read_metadata(reference).get("artifacts")
+    if not isinstance(entries, list):
+        return []
+    names = [entry.get("file") for entry in entries if isinstance(entry, dict)]
+    return [reference.with_name(file) for file in names if isinstance(file, str) and "/" not in file]
 
 
-def save_reference(project: Project, generation: Path, name: str, *, force: bool = False) -> SavedReference:
-    """Copy a Generation file (and its `.json`) to `references/<name>.<ext>`.
-
-    A taken name (with any extension) fails unless `force`, which replaces the old
-    Reference and its `.json`. The copies are written first and moved into place last,
-    so a failed copy leaves the old Reference as it was.
-    """
-    if not NAME_PATTERN.fullmatch(name):
-        raise HiggsError(
-            f"Invalid Reference name {name!r}",
-            hint="Use a name without spaces or slashes that does not start with a dot or @, e.g. hero.",
-            code="invalid_reference_name",
-        )
-    if generation.suffix.lower() == METADATA_SUFFIX:
-        raise HiggsError(
-            f"{generation.name} is metadata, not a Generation",
-            hint=f"Pass the Generation file itself: {generation.with_suffix('').name}.",
-            code="not_a_generation",
-        )
-    taken = matching_files(project, name)
-    if taken and not force:
-        listed = ", ".join(_display(path, project) for path in taken)
-        raise HiggsError(
-            f"Reference @{name} already exists: {listed}",
-            hint="Pick another name, or pass --force to replace it.",
-            code="reference_exists",
-        )
-    target = references_dir(project) / f"{name}{generation.suffix}"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    metadata = _metadata_path(generation)
-    copies = [(generation, target)]
-    if metadata.is_file():
-        copies.append((metadata, _metadata_path(target)))
-    staged = [(_staging_path(destination), destination) for _, destination in copies]
-    for (source, _), (tmp, _) in zip(copies, staged, strict=True):
-        shutil.copyfile(source, tmp)
-    for old in taken:
-        old.unlink()
-        _metadata_path(old).unlink(missing_ok=True)
-    for tmp, destination in staged:
-        os.replace(tmp, destination)
-    return SavedReference(
-        name=name,
-        path=target,
-        metadata_path=_metadata_path(target) if len(copies) > 1 else None,
-        replaced=taken,
-    )
-
-
-def _metadata_path(path: Path) -> Path:
+def metadata_path(path: Path) -> Path:
     return path.with_name(path.name + METADATA_SUFFIX)
 
 
-def _staging_path(path: Path) -> Path:
+def staging_path(path: Path) -> Path:
     # Hidden, so it is never taken for a Reference.
     return path.with_name(f".{path.name}.tmp")
 
 
-def _display(path: Path, project: Project) -> str:
+def display(path: Path, project: Project) -> str:
     return str(path.relative_to(project.path))

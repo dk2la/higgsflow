@@ -100,7 +100,10 @@ def endpoint_sources(endpoint: Endpoint, catalog: Catalog) -> list[PresetSource]
     supported = "; ".join(f"{name}: {', '.join(models)}" for name, models in by_catalog.items() if models)
     raise HiggsError(
         f"--preset is not supported by {endpoint.model} {endpoint.mode}",
-        hint=f"Presets apply to these Models ({supported}); see `higgs presets list <catalog>`.",
+        hint=(
+            f"Presets apply to these Models ({supported}), through `higgs image t2i|i2i` and "
+            "`higgs video restyle`; see `higgs presets list <catalog>`."
+        ),
         code="unsupported_flag",
     )
 

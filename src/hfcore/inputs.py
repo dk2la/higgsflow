@@ -8,7 +8,12 @@ replaced by its `public_url`.
 Which values are files: a string value is an Input when it names an existing file
 (relative to `cwd`, or absolute), or when it looks like a path to a media file (ends in
 an allowed extension such as `.jpg`), in which case a missing file is an error rather
-than a string silently sent to the API. URLs (`scheme://...`) are never Inputs.
+than a string silently sent to the API. URLs (`scheme://...`) are never Inputs. Outside the
+projects root nothing can be checked on disk (the host folder is not mounted, ADR 0003), so
+there a media-URL param's value (`image_url`, `video_urls[0]`) that looks like a file name
+(`photo.heic`: no whitespace, an extension) is an Input too, and fails as
+`input_outside_projects_root` instead of going to the API as a string. Prompts and other
+params keep dotted words such as `acme.com` as strings wherever higgs runs.
 
 A value `@name` (no spaces) is a Reference: the one file `references/<name>.<ext>`
 (`hfcore.references`), uploaded and recorded like any Input with `source="@name"`.
@@ -20,6 +25,7 @@ Convenience flags (`--image @hero`) pass their values through here and get the s
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,12 +36,18 @@ from pydantic import BaseModel
 from hfcore import config, references, uploads
 from hfcore.api import ApiClient
 from hfcore.errors import HiggsError
-from hfcore.projects import Project
+from hfcore.projects import Project, check_inside_projects_root
 
 _CHUNK = 1 << 20
 
 # Extensions that make a string look like a path even when no such file exists.
 MEDIA_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif", ".wav", ".mp4"})
+# A string that looks like a file name with any extension: no whitespace, and an extension that
+# starts with a letter (`photo.heic`, `~/Desktop/clip.mov`; not `v2.5`).
+_FILE_NAME = re.compile(r"\S*\.[A-Za-z][A-Za-z0-9]{0,7}")
+# A param that takes a media URL: every such param of the API is named `*_url` / `*_urls`
+# (`image_url`, `image_urls[1]`, `elements[0].image_url`), never a prompt or a style.
+_URL_PARAM = re.compile(r"(?:^|[._])urls?(?:\[\d+\])*$")
 ALLOWED_TYPES = "jpeg, png, webp, gif, wav or mp4"  # DESIGN.md §9
 IMAGE_TYPES = "jpeg, png, webp or gif"
 _NOT_MP4_BRANDS = frozenset(
@@ -97,7 +109,7 @@ def resolve_inputs(
         for param, value in _strings(top, key):
             if (literal := references.unescape(value)) is not None:
                 replacements[param] = literal
-            elif (path := _locate(value, cwd, project)) is not None:
+            elif (path := _locate(value, param, cwd, project)) is not None:
                 found.append(_check(param, value, path, project, images_only=images_only))
 
     inputs: list[Input] = []
@@ -141,30 +153,42 @@ def _replace(value: Any, param: str, replacements: dict[str, str]) -> Any:
     return value
 
 
-def is_input(value: str, cwd: Path) -> bool:
+def is_input(value: str, param: str, cwd: Path) -> bool:
     """Whether `resolve_inputs` will treat this param value as a local file (or Reference) to upload.
 
     A Reference counts without being resolved; `resolve_inputs` reports a missing one.
     """
     if references.unescape(value) is not None:
         return False
-    return references.reference_name(value) is not None or _file_path(value, cwd) is not None
+    return references.reference_name(value) is not None or _file_path(value, param, cwd) is not None
 
 
-def _locate(value: str, cwd: Path, project: Project) -> Path | None:
+def _locate(value: str, param: str, cwd: Path, project: Project) -> Path | None:
     """The local file a param value names (a Reference or a path), or None when it is a plain string."""
     if (name := references.reference_name(value)) is not None:
         return references.resolve_reference(project, name)
-    return _file_path(value, cwd)
+    return _file_path(value, param, cwd)
 
 
-def _file_path(value: str, cwd: Path) -> Path | None:
-    """The local file a path-like param value names, or None when it is a plain string."""
+def _file_path(value: str, param: str, cwd: Path) -> Path | None:
+    """The local file a path-like param value names, or None when it is a plain string.
+
+    `param` is where the value sits (as `_strings` walks): outside the projects root only a
+    media-URL param's value is taken as a file by its name alone.
+    """
     if "://" in value or "\n" in value:
         return None
     try:
         path = cwd / Path(value).expanduser()  # an absolute value stays absolute
         if path.is_file() or path.suffix.lower() in MEDIA_EXTENSIONS:
+            return path
+        # Outside the projects root no file can be seen, so in a media-URL param its name is all
+        # there is to go by; anywhere else (a prompt, a style) a dotted word stays a string.
+        if (
+            _URL_PARAM.search(param)
+            and _FILE_NAME.fullmatch(value)
+            and not path.resolve().is_relative_to(config.projects_root().resolve())
+        ):
             return path
     except (OSError, ValueError):  # e.g. a long prompt is "File name too long"
         pass
@@ -173,21 +197,12 @@ def _file_path(value: str, cwd: Path) -> Path | None:
 
 def _check(param: str, source: str, path: Path, project: Project, *, images_only: bool = False) -> _Found:
     """Everything that can be checked locally, before any upload."""
-    root = config.projects_root().resolve()
+    check_inside_projects_root(path, source, project, what="Input", folder="inputs")
     real = path.resolve()
-    if not real.is_relative_to(root):
-        raise HiggsError(
-            f"Input {source} is outside the projects root {root}",
-            hint=(
-                f"Only the projects root is visible to higgs. Copy the file into the Project's inputs/ "
-                f"(e.g. cp {source} {project.path / 'inputs'}/) and pass that path."
-            ),
-            code="input_outside_projects_root",
-        )
     if not real.is_file():
         raise HiggsError(
             f"Input {source} not found ({real})",
-            hint="Check the path; relative paths are relative to the current directory.",
+            hint="Check the path; relative paths are relative to the folder higgs was run in.",
             code="input_not_found",
         )
     content_type = sniff_content_type(_head(real))

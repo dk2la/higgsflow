@@ -116,7 +116,46 @@ def test_list_shows_the_project_history_from_local_files_only(higgs, project, ap
     listed = json.loads(result.output)["requests"]
     assert [item["request_id"] for item in listed] == [REQUEST_ID, OTHER_ID]
     assert listed[1]["naming"] == {"model_slug": "kling-3-0-pro", "mode": "i2v", "slug": "waves", "version": 1}
-    assert listed[0] == record_of(project, REQUEST_ID)
+    # Each item is the Request record plus what the Project's generations/ say about it.
+    assert listed[0] == {**record_of(project, REQUEST_ID), "generations": [], "recovered": False}
+
+
+def test_list_names_the_generation_files_of_each_request(higgs, project, api_key, respx_mock):
+    synced_request(higgs, respx_mock)
+
+    listed = json.loads(higgs("list", "--json").output)["requests"]
+
+    assert [item["generations"] for item in listed] == [[f"{DAY}/{NAME}"]]
+    assert listed[0]["recovered"] is False
+
+
+def test_list_recovers_a_request_whose_record_is_gone_from_its_generation_metadata(
+    higgs, project, api_key, respx_mock, monkeypatch
+):
+    # E.g. a Project copied without its hidden .hf/ (ADR 0002: a Project is self-contained).
+    synced_request(higgs, respx_mock)
+    record = record_of(project)
+    (project / ".hf" / "requests" / f"{REQUEST_ID}.json").unlink()
+
+    result = higgs("list", "--json")
+
+    assert result.exit_code == 0, result.output
+    [item] = json.loads(result.output)["requests"]
+    assert item["recovered"] is True
+    assert item["request_id"] == REQUEST_ID
+    assert item["status"] == "completed"
+    assert item["endpoint"] == ENDPOINT
+    assert item["naming"] == record["naming"]
+    assert item["submitted_at"] == record["submitted_at"]
+    assert item["generations"] == [f"{DAY}/{NAME}"]
+    assert json.loads(higgs("list", "--status", "completed", "--model", "soul", "--json").output)["requests"]
+    assert not (project / ".hf" / "requests" / f"{REQUEST_ID}.json").exists()  # listing writes nothing
+
+    monkeypatch.setenv("COLUMNS", "200")
+    text = higgs("list")
+    [line] = [line for line in text.output.splitlines() if "d7e6c0f3" in line]
+    assert "recovered" in line
+    assert NAME in text.output
 
 
 THIRD_ID = "9f8e7d6c-1111-4f6c-bb45-2ad7fd9158bb"
@@ -397,7 +436,7 @@ def test_list_as_text_is_a_table_of_the_requests(higgs, project, api_key, respx_
     assert not respx_mock.calls
     lines = result.output.splitlines()
     [first] = [line for line in lines if "d7e6c0f3" in line]
-    for cell in ("2026-10-30 12:00", "t2i", "a-cat v01", "completed", "deleted", "$0.35", "1"):
+    for cell in ("2026-10-30 12:00", "t2i", "a-cat v01", "completed", "deleted", "$0.35", NAME):
         assert cell in first, first
     [second] = [line for line in lines if "5a1b2c3d" in line]
     for cell in ("2026-10-30 14:00", "kling-3-0-pro", "i2v", "waves v01", "queued"):

@@ -94,7 +94,13 @@ The default projects root is `~/hf-projects` (configurable). `higgs init <name>`
 - on submission, `.hf/requests/<request_id>.json` is created immediately (the ID survives a dropped connection);
 - after download, next to the file — `<name>.mp4.json`: endpoint, all parameters, prompt,
   input files/references, request_id, price, links, timestamps;
-- `list`/`status` scan the files. An index on top can be added later (e.g. for the web UI).
+- `list`/`status` scan the files. `list` (`hfcore.tracking.project_history`) reads `.hf/requests/*.json` and
+  every Generation `.json` in `generations/*/` (through `hfcore.generations.list_generations`, the same
+  metadata reader as `pick`/`ref save`) and merges them by `request_id`: each item is the Request record
+  plus `generations` (its Generation files, relative to the Project) and `recovered: false`; a request id
+  that only Generation metadata knows (a Project copied without `.hf/`, a record deleted by hand) is rebuilt
+  from that metadata as a `completed` Request with `recovered: true` (no `idempotency_key`), so the history
+  survives without `.hf/`. Listing writes nothing. An index on top can be added later (e.g. for the web UI).
 
 Global: `~/.config/higgs/` — credentials, config (projects root), `models.local.toml`,
 `catalog.json` (written by `higgs models sync`), `souls.toml` (Soul ID registry: name → id;
@@ -106,11 +112,19 @@ unreadable file fails every Soul ID command (`invalid_souls_file`) and is never 
 the only record of the ids.
 
 **References:** any file in `references/` is a Reference, whether put there by hand or via
-`higgs ref save` (which copies the Generation together with its `.json`). A Reference name is unique
+`higgs ref save` (`hfcore.generations.save_reference`). `ref save` finds and checks the Generation exactly
+like `pick` (`find_generation` + `check_generation`, the only lookup): it must be in `generations/` with its
+`.json` and every Artifact present, else `not_a_generation` / `generation_metadata_missing` /
+`generation_not_found` / `artifact_missing`. It copies the Generation, its `.json` and every Artifact, each
+renamed after the Reference (the Generation's base name swapped for `<name>`: `hero.mov`, `hero-mov.mov`,
+`hero.fbx`), and the copied `.json` lists the Artifacts under their new names. A Reference name is unique
 regardless of extension (`hero.png` and `hero.mp4` cannot coexist); `ref save` to a taken name fails
-unless `--force` (which replaces the old Reference and its `.json`, whatever its extension); an ambiguous
-`@name` fails and lists the matches, an unknown one lists the Project's References (close matches first).
-The `.json` files and hidden files in `references/` are not References. A parameter value is a Reference
+unless `--force` (which replaces the old Reference, its `.json` and the Artifacts it lists, whatever its
+extension); a file the save would write that belongs to no replaced Reference fails it with
+`reference_exists`. Everything is staged in hidden files first, so a failed save leaves `references/`
+untouched. An ambiguous `@name` fails and lists the matches, an unknown one lists the Project's References
+(close matches first). The `.json` files, hidden files and the Artifacts a Reference's `.json` lists are
+not References. A parameter value is a Reference
 when it is exactly `@name` with no whitespace; a value starting with `@@` is sent with one `@` removed
 (`@@hero` → the literal string `@hero`).
 
@@ -134,6 +148,19 @@ command with `invalid_project_config` before anything is submitted.
 **Current project:** like git, the CLI walks up from the current directory to the nearest
 `project.toml`; `--project <name>` overrides it. There is no global "active project".
 Outside a project, project-scoped commands fail with a hint to run `higgs init` or pass `--project`.
+
+**Relative paths** typed by the user (Inputs in `-p`, `--prompt-file`, the `pick` / `ref save` Generation,
+`soul train` images) are relative to `hfcore.config.working_dir()`: the host's `$PWD`, which `bin/higgs`
+passes as `HIGGS_HOST_PWD`, else the process's current directory. From a host folder inside the projects
+root that is the container's working directory too. From one outside it the container runs in the projects
+root, but paths still resolve against the (unmounted) host folder, so they fail as
+`input_outside_projects_root` (Inputs, `--prompt-file`, Soul ID images, Generation paths) instead of
+silently naming a file in the projects root (#44); a prompt file inside the projects root but outside the
+Project is `prompt_file_outside_project`. Nothing outside the projects root can be checked on disk, so there
+the value of a media-URL param (`*_url` / `*_urls`, the API's naming for every media input: `image_url`,
+`video_urls[0]`) counts as an Input when it looks like a file name (no whitespace, an extension starting with
+a letter: `photo.heic`, `~/Desktop/clip.mov`), and every non-URL `soul train` image is taken as a file. Other
+params never are: `--prompt acme.com` or `-p style=film.noir` is sent as typed wherever higgs runs. A bare Generation file name is still looked up in the Project's `generations/`.
 
 **Generation naming:**
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN.<ext>`,
@@ -223,13 +250,14 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
      since the API is uniform (`POST /{endpoint}` → `request_id` → the same polling);
      the ID cannot be guessed from the marketing name — take it from the Console/docs/pricing;
      a wrong ID → 404 with no charge;
-  2. a manual description in `~/.config/higgs/models.local.toml` (path, parameters, alias) —
+  2. a manual description in `~/.config/higgs/models.local.toml` (path, Model name, parameters) —
      the model shows up in `models list` and in the convenience commands with validation.
      One `[[endpoint]]` table per Endpoint (`id`, `model`, `family`, `mode`, optional `tier`, `price`,
      `notes`, `[endpoint.prompt]` soft limits) with one `[endpoint.parameters.<name>]` table per
-     parameter (format in the README). It is layered last in `load_catalog`: new ids add Endpoints (and
-     Models/Families), an existing id replaces that Endpoint as a whole. A malformed file is an
-     `invalid_models_local` error naming the file;
+     parameter (format in the README). There is no separate `alias` field: the slug of `model`
+     (`"Kling 4.0"` → `kling-4.0`) is the name `--model`, `models show` and `list --model` take. It is
+     layered last in `load_catalog`: new ids add Endpoints (and Models/Families), an existing id
+     replaces that Endpoint as a whole. A malformed file is an `invalid_models_local` error naming the file;
   3. `models sync` tries the undocumented `GET /models` with the key (skipped quietly without one)
      and merges the result if it returns anything usable. Any error or unknown format is only a
      note. It accepts a list, or an object with a list under `models`/`data`/`results`/`items`/
@@ -275,7 +303,10 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
 - **One subcommand per Mode code.** `higgs video t2v|i2v|ref|vref|edit|extend|motion|restyle` (each Mode
   code of §6 is its own subcommand, so `vref` and `restyle` are not folded into other commands; #17), and
   `higgs image t2i|i2i` (#18). A subcommand only declares the options that make sense for its Mode and calls
-  `hfcli.convenience.generate(kind=..., mode=..., flags=...)`.
+  `hfcli.convenience.generate(kind=..., mode=..., flags=...)`. The one exception is `--preset`: every
+  subcommand declares it, because whether a Preset exists depends on the Model, not the Mode, and on a Model
+  without Presets it fails with `unsupported_flag` (a JSON error under `--json`) rather than Typer's
+  "No such option" (#49).
 - **Inputs.** `--video` → `video_url`, else `video_urls` (a list of one); `--audio` → `audio_url`, else
   `audio_urls`; `--ref` (repeatable) → `image_urls`, in the order given, so the n-th `--ref` is `<<<image_n>>>`.
   `--ref` takes images only: where the references are videos (Wan 2.6 ref, Kling O3/Omni vref) the video is
@@ -302,7 +333,21 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
 - **`--count N`:** the N bodies differ only in `seed` where the Endpoint has one: `--seed S` → S, S+1, ...;
   without it distinct random seeds in the parameter's range. All N go through one `hfcli.pipeline.run_requests`
   (shared with `higgs gen`): validate all → upload → estimate all → one confirmation → submit all → wait for
-  and download all. `--json` of a convenience command is always a list with one object per Request.
+  and download all. `--json` of a convenience command is always a list with one object per Request; one that
+  did not complete keeps its place with an `error` object (`RequestNotCompleted.to_dict()`: `code`, `message`,
+  `hint`, `request_id`, `status`) and no `generations`, the list is printed in full and the command then exits 1
+  (#45). A wait or download that gives up is kept the same way, on that Request's item, and the other Requests
+  are still waited for. A submit that gives up partway through `--count N` (`SUBMIT_ATTEMPTS` used up) stops
+  the submits; the Requests already submitted are still waited for and listed, and each unsubmitted body is an
+  item `{"request_id": null, "error", "warnings"}`, the error's hint naming the submitted ids ("1 of the 3
+  Requests was submitted before this (req-1) and is billed once it completes; the other 2 were not submitted").
+  When any attempt of that submit got no answer or a 5xx, the Request it was submitting may exist after all
+  (`hfcore.lifecycle.SubmitFailed.may_exist`), so the hint says "this one may have been submitted too
+  (see above), and the other 1 was not submitted" instead. If the first submit fails, the error is raised as
+  usual, its hint adding "None of the 3 Requests was submitted" (every attempt refused, e.g. 429s) or "The
+  other 2 Requests were not submitted" (some attempt got no answer or a 5xx). In text mode one problem
+  is raised as itself, several as `requests_unfinished` listing them all. `higgs gen` submits one Request, so a
+  failure there is the usual top-level JSON error.
 - **Images (#18; `hfcli.image`).** `higgs image t2i` reaches the 14 `t2i` Endpoints (also the Models that take
   optional reference images), `higgs image i2i` Qwen Image 3 edit; Ads Studio (`ads`) stays `higgs gen`-only,
   so `higgs image t2i -m ads-studio` is `unknown_mode`. Both take `--model`, `--prompt`/`--prompt-file`,
@@ -339,7 +384,7 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   list's Endpoints); a style both SOUL lists have is shown once with both Models. `--preset` matches the id or
   the name case-insensitively among the Presets of the chosen Endpoint's own lists (a SOUL V2 style is not a
   SOUL one). Errors: an Endpoint in no list → `unsupported_flag` (before any API call, listing the Models per
-  catalog); no match → `unknown_preset` with `difflib` close names; a name several Presets share →
+  catalog and the commands that take Presets); no match → `unknown_preset` with `difflib` close names; a name several Presets share →
   `ambiguous_preset` with their ids (and groups). Marketing Studio's `preset_id` only works with prompt
   enhancement (the docs: `enhance_prompt=true` requires `preset_id` and 1–2 `image_urls`), so the source adds
   `enhance_prompt: true` below `-p`. A test checks that every catalog Endpoint whose schema has a `style_id` or
@@ -355,8 +400,8 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   registered (`soul_not_found`); the versions match (`soul_version_mismatch`); the training completed
   (`soul_not_ready` / `soul_training_failed` — a registered status that is not final is refreshed from the
   API once first, so a `--no-wait` training that finished since is usable at once).
-- Soul ID training is not a Request: it is account-scoped, is not written to the project's `.hf/` and
-  does not count toward project spend. `soul train` polls `GET /v1/custom-references/{id}` the same
+- Soul ID training is not a Request: it is account-scoped, only its upload cache is written to the
+  project's `.hf/` (no Request record) and it does not count toward project spend. `soul train` polls `GET /v1/custom-references/{id}` the same
   way as a generation and supports `--no-wait`; `soul status` checks on it later.
   (#21; `hfcore.souls`, `hfcli.souls`.) Only the training images' upload cache lands in the Project's
   `.hf/uploads.json`; `.hf/requests/` and Spend are untouched. `soul train <name> <images...>`
@@ -396,9 +441,10 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
    `POST /files/generate-upload-url` → `PUT` with `upload_headers` → `public_url`.
    Cached by sha256 for 7 days (the API deletes uploads after 7 days); an entry is reused while
    more than an hour of it is left. A string parameter value (also inside lists and objects) is a
-   local file when it names an existing file (relative to the current directory, or absolute) or
-   ends in an allowed media extension (`.jpg`, `.png`, `.mp4`, …; then a missing file is an error);
-   URLs never are. The type is judged by the file's content, not its name. Every file is checked
+   local file when it names an existing file (relative to `hfcore.config.working_dir()`, the folder
+   higgs was run in, or absolute; see §5 "Relative paths") or ends in an allowed media extension (`.jpg`,
+   `.png`, `.mp4`, …; then a missing file is an error); outside the projects root, any value that looks like
+   a file name is one, and fails as `input_outside_projects_root`. URLs never are. The type is judged by the file's content, not its name. Every file is checked
    (projects root, type) before the first upload. The Request record lists its Inputs
    (`param`, `source`, `path`, `sha256`, `content_type`, `public_url`).
 3. Exact price: `POST /estimate/{endpoint}` with the same body → `{"usd": "..."}`.
@@ -412,9 +458,17 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
    estimates every Request and confirms their total once.
 4. Submit `POST /{endpoint}` with an `Idempotency-Key` (UUID); immediately write `.hf/requests/<request_id>.json`.
    A network failure, timeout or `5xx` (other than a disabled model) and a `429` (after `Retry-After`) are
-   retried a few times with the same key, so a retried submit is never billed twice.
+   retried with the same key, so a retried submit is never billed twice — at most `SUBMIT_ATTEMPTS` (5)
+   attempts in all (`hfcore.lifecycle`). Giving up after `429`s only says this Request was not submitted or
+   charged and points to `higgs list --status pending` (retry once running Requests finish). If any attempt got
+   no answer or a 5xx, the error (a `SubmitFailed`, keeping the last error's code and fields) says instead that
+   the submit may have reached the API under its Idempotency-Key, with no local record — also when the last
+   attempt was refused (four timeouts, then a 429) or failed for good (a timeout, then a 403).
 5. Polling `GET /requests/{id}/status`: 2 s → backoff up to 10 s + jitter.
-   `429 account_queue_full` → wait for `Retry-After`; `503` → retry with backoff.
+   `429 account_queue_full` → wait for `Retry-After`; `503` and network failures → retry with backoff.
+   After `POLL_ERROR_ATTEMPTS` (8) failed checks in a row the wait ends with that error; the record stays
+   and the hint says to run `higgs sync` later (the caps are deliberate, #50: a command never hangs on a
+   busy account, and nothing is lost by stopping).
 6. Terminal statuses: `completed`, `failed`, `nsfw`, `canceled` (failed/nsfw/canceled are not billed).
 7. Auto-download of the result + write the `.json` next to it. Links stop working at `expires_at`
    from the status response; it is stored in the Request's `.json`, and `download` fails early once it has passed.
@@ -448,8 +502,14 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
   `limit` up to 100 buckets) → `{time_series: [{bucket, results: [{model, unit, quantity, unit_price, cost, currency}]}],
   total, page, limit}`; completed generations only, not a billing record. `higgs usage` asks for the last 30 UTC
   days by day and sums per Endpoint; in a Project a failing call is only a warning next to the local Spend.
-- Errors: 401 invalid key; 403 `api_key_expired`/`api_key_disabled`/insufficient funds;
-  404/423/503 — model unavailable; 422 — idempotency conflict.
+- Errors: 401 invalid key; 403 `api_key_expired`/`api_key_disabled` by `code`, insufficient funds,
+  or another refusal (a member calling an admin-only operation); 404/423/503 — model unavailable;
+  422 — idempotency conflict. The docs show no `code` for the balance 403, so higgs reports
+  `insufficient_funds` only for a balance-like `code` (`insufficient_balance`, …) or, when the body
+  has no `code`, a detail saying the balance or funds are short ("Insufficient balance", "not enough funds",
+  "balance is too low"); a detail that only mentions them ("Only admins can view billing and balance") is
+  not one (#46). Every other 403 is `forbidden`: the API's detail
+  plus a hint naming the possible causes (role permissions, the key, the balance).
 - Allowed upload types: jpeg/png/webp/gif, wav, mp4.
 
 **Unconfirmed:** the format and purpose of `GET /models`; the actual default concurrency

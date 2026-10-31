@@ -453,6 +453,162 @@ def test_a_failed_request_fails_the_command_after_the_others_are_downloaded(
     assert json.loads((project / ".hf" / "requests" / "req-1.json").read_text())["status"] == "failed"
 
 
+def test_json_with_count_reports_every_request_when_one_does_not_complete(
+    higgs, project, api_key, respx_mock, estimate
+):
+    mock_submit(respx_mock, WAN_T2V)
+
+    def status(request: httpx.Request) -> httpx.Response:
+        request_id = request.url.path.split("/")[2]
+        if request_id == "req-2":
+            return httpx.Response(200, json={"status": "nsfw", "request_id": request_id})
+        url = f"https://cdn.example.com/{request_id}.mp4"
+        return httpx.Response(200, json={"status": "completed", "request_id": request_id, "video": {"url": url}})
+
+    respx_mock.get(url__regex=rf"{API}/requests/req-\d+/status").mock(side_effect=status)
+    respx_mock.get(url__regex=r"https://cdn.example.com/req-\d+.mp4").mock(
+        side_effect=lambda request: httpx.Response(200, content=request.url.path.encode())
+    )
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--name", "waves", "--count", "3",
+                   "--json", "--yes")
+
+    assert result.exit_code == 1
+    output = json.loads(result.output)  # one JSON document: every Request, finished or not
+    assert [item["request_id"] for item in output] == ["req-1", "req-2", "req-3"]
+    assert [item["record"]["status"] for item in output] == ["completed", "nsfw", "completed"]
+    assert [Path(output[index]["generations"][0]["path"]).name for index in (0, 2)] == [
+        "20261030-1200_wan-2-7_t2v_waves_v01.mp4",
+        "20261030-1200_wan-2-7_t2v_waves_v03.mp4",
+    ]
+    assert "error" not in output[0] and "error" not in output[2]
+    assert "generations" not in output[1]
+    assert output[1]["error"]["code"] == "request_nsfw"
+    assert output[1]["error"]["request_id"] == "req-2"
+    assert output[1]["error"]["status"] == "nsfw"
+
+
+QUEUE_FULL = httpx.Response(
+    429,
+    headers={"Retry-After": "30"},
+    json={"detail": {"code": "account_queue_full", "message": "Too many queued generations", "retry_after_seconds": 30}},
+)
+
+
+def mock_completed_videos(respx_mock) -> None:
+    """Every Request completes with a video whose bytes are its own CDN path."""
+    respx_mock.get(url__regex=rf"{API}/requests/req-\d+/status").mock(
+        side_effect=lambda request: httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "request_id": request.url.path.split("/")[2],
+                "video": {"url": f"https://cdn.example.com/{request.url.path.split('/')[2]}.mp4"},
+            },
+        )
+    )
+    respx_mock.get(url__regex=r"https://cdn.example.com/req-\d+.mp4").mock(
+        side_effect=lambda request: httpx.Response(200, content=request.url.path.encode())
+    )
+
+
+def test_a_submit_giving_up_mid_count_still_reports_and_downloads_what_was_submitted(
+    higgs, project, api_key, respx_mock, estimate
+):
+    # The first submit is accepted; then the queue stays full and the second gives up.
+    respx_mock.post(f"{API}/{WAN_T2V}").mock(side_effect=[submitted("req-1"), *[QUEUE_FULL] * 5])
+    mock_completed_videos(respx_mock)
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--name", "waves", "--count", "3",
+                   "--json", "--yes")
+
+    assert result.exit_code == 1
+    output = json.loads(result.output)  # one item per requested Request
+    assert [item["request_id"] for item in output] == ["req-1", None, None]
+    assert output[0]["record"]["status"] == "completed"
+    assert Path(output[0]["generations"][0]["path"]).name == "20261030-1200_wan-2-7_t2v_waves_v01.mp4"
+    for item in output[1:]:
+        error = item["error"]
+        assert error["code"] == "queue_full"
+        # Not "nothing was charged": req-1 went through and is billed once it completes.
+        assert "Nothing was submitted" not in error["hint"]
+        assert "1 of the 3 Requests" in error["hint"] and "req-1" in error["hint"]
+        assert "2 were not submitted" in error["hint"]
+
+
+def test_a_submit_failing_on_the_network_mid_count_says_that_request_may_have_been_submitted(
+    higgs, project, api_key, respx_mock, estimate
+):
+    # The second submit times out every time: it may have reached the API, the third never ran.
+    respx_mock.post(f"{API}/{WAN_T2V}").mock(side_effect=[submitted("req-1"), *[httpx.ReadTimeout("timed out")] * 5])
+    mock_completed_videos(respx_mock)
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--count", "3", "--json", "--yes")
+
+    assert result.exit_code == 1
+    output = json.loads(result.output)
+    assert [item["request_id"] for item in output] == ["req-1", None, None]
+    hint = output[1]["error"]["hint"]
+    assert "may have reached the API" in hint and "Idempotency-Key" in hint
+    assert "1 of the 3 Requests was submitted before this (req-1)" in hint
+    assert "this one may have been submitted too (see above), and the other 1 was not submitted" in hint
+    assert "2 were not submitted" not in hint
+
+
+@pytest.mark.parametrize(
+    ("failure", "says"),
+    [
+        (QUEUE_FULL, "None of the 3 Requests was submitted."),
+        (httpx.ReadTimeout("timed out"), "The other 2 Requests were not submitted."),
+    ],
+)
+def test_a_first_submit_giving_up_says_what_it_means_for_the_count(
+    higgs, project, api_key, respx_mock, estimate, failure, says
+):
+    respx_mock.post(f"{API}/{WAN_T2V}").mock(side_effect=[failure] * 5)
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--count", "3", "--json", "--yes")
+
+    assert result.exit_code == 1
+    hint = json.loads(result.output)["error"]["hint"]
+    assert says in hint
+    # A timed-out submit may exist, so it must not be counted among the unsubmitted.
+    assert ("None of the" in hint) == (failure is QUEUE_FULL)
+
+
+def test_a_submit_giving_up_mid_count_as_text_names_what_was_submitted(higgs, project, api_key, respx_mock, estimate):
+    respx_mock.post(f"{API}/{WAN_T2V}").mock(side_effect=[submitted("req-1"), *[QUEUE_FULL] * 5])
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--count", "2", "--no-wait", "--yes")
+
+    assert result.exit_code == 1
+    output = " ".join(result.output.split())
+    assert "Submitted Request req-1" in output
+    assert "1 of the 2 Requests" in output and "req-1" in output
+
+
+def test_polling_giving_up_on_one_request_of_a_count_still_downloads_the_others(
+    higgs, project, api_key, respx_mock, estimate
+):
+    mock_submit(respx_mock, WAN_T2V)
+    respx_mock.get(f"{API}/requests/req-1/status").mock(
+        return_value=httpx.Response(503, json={"detail": {"code": "admission_control_unavailable", "message": "x"}})
+    )
+    mock_completed_videos(respx_mock)
+
+    result = video(higgs, "t2v", "--model", "wan-2.7", "--prompt", "Waves", "--name", "waves", "--count", "2",
+                   "--json", "--yes")
+
+    assert result.exit_code == 1
+    output = json.loads(result.output)
+    assert [item["request_id"] for item in output] == ["req-1", "req-2"]
+    assert output[0]["error"]["code"] == "service_unavailable"
+    assert "higgs sync" in output[0]["error"]["hint"]
+    assert "billed only if it completes" in output[0]["error"]["hint"]
+    assert output[1]["record"]["status"] == "completed"
+    assert Path(output[1]["generations"][0]["path"]).name == "20261030-1200_wan-2-7_t2v_waves_v02.mp4"
+
+
 def test_p_parameters_reach_the_body_and_win_over_flags(higgs, project, api_key, respx_mock, estimate):
     route = mock_submit(respx_mock, "kling-video/v2.6/pro/text-to-video")
 

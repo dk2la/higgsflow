@@ -1,0 +1,35 @@
+# Runs the same checks as `scripts/dev test` and `scripts/dev typecheck`, inside the
+# project's Docker image (ADR 0003), so building that image is checked too.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Tests and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --tag higgsflow:ci .
+
+      - name: Smoke-test the CLI
+        run: docker run --rm higgsflow:ci --version
+
+      - name: Tests
+        run: docker run --rm --entrypoint pytest higgsflow:ci
+
+      - name: Typecheck
+        run: docker run --rm --entrypoint mypy higgsflow:ci

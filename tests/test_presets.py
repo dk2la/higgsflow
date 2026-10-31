@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 import httpx
+import pytest
 import respx
 
 from hfcore.catalog.loader import load_baked_in
@@ -401,3 +402,32 @@ def test_a_preset_name_given_at_the_prompt_is_looked_up_too(higgs, project, api_
 
     assert result.exit_code == 0, result.output
     assert body(route)["preset_id"] == "c2143317-f28d-4c3c-a0b8-39bd547e08a7"
+
+
+def test_preset_on_a_video_command_without_presets_fails_clearly_as_json(higgs, project, respx_mock):
+    # `--preset` is an option of every convenience command, so a Model without Presets gets
+    # the project's own error (exit 1, JSON) rather than Typer's "No such option" (exit 2).
+    result = higgs(
+        "video", "t2v", "--model", "kling-3.0", "--quality", "pro", "--prompt", "Waves", "--preset", "noir", "--json"
+    )
+
+    error = error_of(result)
+    assert error["code"] == "unsupported_flag"
+    assert error["message"].startswith("--preset is not supported by kling-3.0")
+    assert "higgs image t2i" in error["hint"]
+    assert "higgs video restyle" in error["hint"]
+    assert not respx_mock.calls
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ("image", "t2i"),
+        ("image", "i2i"),
+        *(("video", mode) for mode in ("t2v", "i2v", "ref", "edit", "vref", "extend", "motion", "restyle")),
+    ],
+)
+def test_every_convenience_command_takes_preset(higgs, command):
+    result = higgs(*command, "--help")
+
+    assert "--preset" in result.output

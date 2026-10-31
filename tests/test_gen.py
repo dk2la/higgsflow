@@ -138,6 +138,15 @@ API_ERRORS = [
     ),
     (403, {"code": "api_key_disabled", "detail": "This API key is disabled."}, "api_key_disabled"),
     (403, {"detail": "Insufficient balance"}, "insufficient_funds"),
+    (403, {"code": "insufficient_balance", "detail": "Top up to continue."}, "insufficient_funds"),
+    # Any other 403, e.g. a member calling an admin-only operation ("Organizations and roles").
+    (403, {"detail": "Not enough funds on the account"}, "insufficient_funds"),
+    (403, {"detail": "Your balance is too low"}, "insufficient_funds"),
+    (403, {"detail": "Forbidden"}, "forbidden"),
+    (403, {"code": "permission_denied", "detail": "Admins only"}, "forbidden"),
+    # Mentioning money is not a balance problem (#46).
+    (403, {"detail": "Only admins can view billing and balance"}, "forbidden"),
+    (403, {"detail": "Members cannot add funds"}, "forbidden"),
     (404, {"detail": "Not Found"}, "model_unavailable"),
     (423, {"detail": "Model is temporarily blocked"}, "model_unavailable"),
     (503, {"detail": "Model is disabled"}, "model_unavailable"),
@@ -208,6 +217,18 @@ def test_an_insufficient_balance_points_to_the_console(higgs, project, api_key, 
     error = json.loads(gen(higgs).output)["error"]
 
     assert "console.higgsfield.ai" in error["hint"]
+
+
+def test_an_unrecognised_403_is_neutral_and_names_the_possible_causes(higgs, project, api_key, respx_mock, estimate):
+    respx_mock.post(SUBMIT_URL).mock(return_value=httpx.Response(403, json={"detail": "Admins only"}))
+
+    error = json.loads(gen(higgs).output)["error"]
+
+    assert error["code"] == "forbidden"
+    assert "Admins only" in error["message"]
+    assert "balance" not in error["message"].lower()
+    for cause in ("permission", "key", "balance"):
+        assert cause in error["hint"].lower()
 
 
 def test_a_submit_response_without_a_request_id_is_an_error(higgs, project, api_key, respx_mock, estimate):
