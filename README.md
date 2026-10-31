@@ -326,7 +326,9 @@ have no schema, so they take any parameters without `--no-validate`.
 
 Describe an Endpoint the docs do not have (yet) in `~/.config/higgs/models.local.toml`; it then shows up in
 `higgs models list` / `models show` and `higgs gen` validates against it like against a documented one. Each
-`[[endpoint]]` table is one Endpoint, followed by one `[endpoint.parameters.<name>]` table per parameter:
+`[[endpoint]]` table is one Endpoint, followed by one `[endpoint.parameters.<name>]` table per parameter.
+There is no `alias` field: the slug of `model` (`"Kling 4.0"` → `kling-4.0`) is the name that `--model`,
+`higgs models show` and `higgs list --model` accept.
 
 ```toml
 [[endpoint]]
