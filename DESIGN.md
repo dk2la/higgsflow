@@ -223,13 +223,14 @@ of date and model (`sunset-beach_v01` on Monday, `sunset-beach_v02` on Tuesday w
      since the API is uniform (`POST /{endpoint}` → `request_id` → the same polling);
      the ID cannot be guessed from the marketing name — take it from the Console/docs/pricing;
      a wrong ID → 404 with no charge;
-  2. a manual description in `~/.config/higgs/models.local.toml` (path, parameters, alias) —
+  2. a manual description in `~/.config/higgs/models.local.toml` (path, Model name, parameters) —
      the model shows up in `models list` and in the convenience commands with validation.
      One `[[endpoint]]` table per Endpoint (`id`, `model`, `family`, `mode`, optional `tier`, `price`,
      `notes`, `[endpoint.prompt]` soft limits) with one `[endpoint.parameters.<name>]` table per
-     parameter (format in the README). It is layered last in `load_catalog`: new ids add Endpoints (and
-     Models/Families), an existing id replaces that Endpoint as a whole. A malformed file is an
-     `invalid_models_local` error naming the file;
+     parameter (format in the README). There is no separate `alias` field: the slug of `model`
+     (`"Kling 4.0"` → `kling-4.0`) is the name `--model`, `models show` and `list --model` take. It is
+     layered last in `load_catalog`: new ids add Endpoints (and Models/Families), an existing id
+     replaces that Endpoint as a whole. A malformed file is an `invalid_models_local` error naming the file;
   3. `models sync` tries the undocumented `GET /models` with the key (skipped quietly without one)
      and merges the result if it returns anything usable. Any error or unknown format is only a
      note. It accepts a list, or an object with a list under `models`/`data`/`results`/`items`/
