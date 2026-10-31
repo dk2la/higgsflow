@@ -392,11 +392,18 @@ def api_error(response: httpx.Response) -> ApiError:
         return error("api_key_expired", f"The API key has expired: {detail}", _KEY_HINT)
     if status == 403 and api_code == "api_key_disabled":
         return error("api_key_disabled", f"The API key is disabled: {detail}", _KEY_HINT)
-    if status == 403:
+    if status == 403 and _is_balance_problem(api_code, detail):
         return error(
             "insufficient_funds",
             f"Not enough balance: {detail}",
             "Add funds in console.higgsfield.ai (API billing is separate from higgsfield.ai credits).",
+        )
+    if status == 403:
+        return error(
+            "forbidden",
+            f"The API refused the call (HTTP 403): {detail}",
+            "Possible causes: the key's role lacks permission for this operation (admin-only in Console), "
+            "the key is expired or disabled, or the balance is too low. Check them in console.higgsfield.ai.",
         )
     if status == 503 and api_code == "admission_control_unavailable":
         return error("service_unavailable", f"The API cannot accept Requests right now: {detail}", "Try again shortly.")
@@ -423,6 +430,19 @@ def api_error(response: httpx.Response) -> ApiError:
         limited.retry_after = retry_after
         return limited
     return error("api_error", f"API error (HTTP {status}): {detail}")
+
+
+# Codes a balance problem might carry. The docs list 403 as "Insufficient balance" but
+# show no code for it, so a 403 without any code is also read as one when its detail
+# says so; a 403 with some other code is never guessed to be about money.
+_BALANCE_CODES = {"insufficient_balance", "insufficient_funds", "not_enough_balance", "balance_insufficient"}
+
+
+def _is_balance_problem(api_code: str | None, detail: str) -> bool:
+    if api_code is not None:
+        return api_code in _BALANCE_CODES
+    text = detail.lower()
+    return "balance" in text or "funds" in text
 
 
 def _retry_after(response: httpx.Response) -> float | None:

@@ -448,8 +448,12 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
   `limit` up to 100 buckets) → `{time_series: [{bucket, results: [{model, unit, quantity, unit_price, cost, currency}]}],
   total, page, limit}`; completed generations only, not a billing record. `higgs usage` asks for the last 30 UTC
   days by day and sums per Endpoint; in a Project a failing call is only a warning next to the local Spend.
-- Errors: 401 invalid key; 403 `api_key_expired`/`api_key_disabled`/insufficient funds;
-  404/423/503 — model unavailable; 422 — idempotency conflict.
+- Errors: 401 invalid key; 403 `api_key_expired`/`api_key_disabled` by `code`, insufficient funds,
+  or another refusal (a member calling an admin-only operation); 404/423/503 — model unavailable;
+  422 — idempotency conflict. The docs show no `code` for the balance 403, so higgs reports
+  `insufficient_funds` only for a balance-like `code` (`insufficient_balance`, …) or, when the body
+  has no `code`, a detail mentioning balance/funds. Every other 403 is `forbidden`: the API's detail
+  plus a hint naming the possible causes (role permissions, the key, the balance).
 - Allowed upload types: jpeg/png/webp/gif, wav, mp4.
 
 **Unconfirmed:** the format and purpose of `GET /models`; the actual default concurrency
