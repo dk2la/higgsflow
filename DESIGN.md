@@ -329,7 +329,14 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   and download all. `--json` of a convenience command is always a list with one object per Request; one that
   did not complete keeps its place with an `error` object (`RequestNotCompleted.to_dict()`: `code`, `message`,
   `hint`, `request_id`, `status`) and no `generations`, the list is printed in full and the command then exits 1
-  (#45). `higgs gen` submits one Request, so a failure there is the usual top-level JSON error.
+  (#45). A wait or download that gives up is kept the same way, on that Request's item, and the other Requests
+  are still waited for. A submit that gives up partway through `--count N` (`SUBMIT_ATTEMPTS` used up) stops
+  the submits; the Requests already submitted are still waited for and listed, and each unsubmitted body is an
+  item `{"request_id": null, "error", "warnings"}`, the error's hint naming the submitted ids ("1 of the 3
+  Requests was submitted before this (req-1) and is billed once it completes; the other 2 were not submitted").
+  If the first submit fails, nothing was submitted and the error is raised as usual. In text mode one problem
+  is raised as itself, several as `requests_unfinished` listing them all. `higgs gen` submits one Request, so a
+  failure there is the usual top-level JSON error.
 - **Images (#18; `hfcli.image`).** `higgs image t2i` reaches the 14 `t2i` Endpoints (also the Models that take
   optional reference images), `higgs image i2i` Qwen Image 3 edit; Ads Studio (`ads`) stays `higgs gen`-only,
   so `higgs image t2i -m ads-studio` is `unknown_mode`. Both take `--model`, `--prompt`/`--prompt-file`,
@@ -440,7 +447,7 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
 4. Submit `POST /{endpoint}` with an `Idempotency-Key` (UUID); immediately write `.hf/requests/<request_id>.json`.
    A network failure, timeout or `5xx` (other than a disabled model) and a `429` (after `Retry-After`) are
    retried with the same key, so a retried submit is never billed twice — at most `SUBMIT_ATTEMPTS` (5)
-   attempts in all (`hfcore.lifecycle`). Giving up after a `429` says nothing was submitted or charged and
+   attempts in all (`hfcore.lifecycle`). Giving up after a `429` says this Request was not submitted or charged and
    points to `higgs list --status pending` (retry once running Requests finish); giving up after network/5xx
    failures says the submit may have reached the API under its Idempotency-Key, with no local record.
 5. Polling `GET /requests/{id}/status`: 2 s → backoff up to 10 s + jitter.

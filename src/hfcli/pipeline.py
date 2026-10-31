@@ -7,8 +7,11 @@ the Inputs → estimate every body → confirm the total price once → submit e
 
 A command then prints the `Batch` (`result_json` / `echo_result`) and calls
 `Batch.raise_unfinished()`, so a failed Request still fails the command after the
-others were reported. In `--json` mode a Request that did not complete carries its error
-in its own item (`result_json`), so one JSON document reports every Request.
+others were reported. One Request's trouble never hides the others: a Request that did
+not complete, or whose wait or download gave up, keeps its error on its own result, and a
+submit that gives up partway through `--count N` stops the submits but the Requests already
+submitted (and billed once they complete) are still waited for and reported. In `--json`
+mode every Request has its own item (`batch_json`), so one JSON document reports them all.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from hfcore import credentials, downloads, inputs, lifecycle, requests, validati
 from hfcore.api import ApiClient
 from hfcore.catalog import load_catalog
 from hfcore.config import config_dir, working_dir
+from hfcore.errors import HiggsError
 from hfcore.projects import Project
 from hfcore.requests import RequestRecord
 from hfcore.spend import BudgetWarning
@@ -38,8 +42,8 @@ class RequestResult:
     path: Path
     # None until downloaded: with `no_wait`, or when the Request did not complete.
     generations: list[downloads.DownloadedGeneration] | None = None
-    # Set when the Request ended `failed`, `nsfw` or `canceled`.
-    error: lifecycle.RequestNotCompleted | None = None
+    # Set when the Request ended `failed`, `nsfw` or `canceled`, or its wait or download gave up.
+    error: HiggsError | None = None
 
 
 @dataclass
@@ -48,15 +52,28 @@ class Batch:
 
     results: list[RequestResult]
     warnings: list[BudgetWarning]
+    # A submit that gave up partway through `--count N`, and how many bodies it left unsubmitted.
+    submit_error: HiggsError | None = None
+    not_submitted: int = 0
 
     @property
-    def unfinished(self) -> list[lifecycle.RequestNotCompleted]:
-        """The errors of the Requests that ended `failed`, `nsfw` or `canceled`."""
-        return [result.error for result in self.results if result.error is not None]
+    def unfinished(self) -> list[HiggsError]:
+        """Every error of the command: the Requests that did not complete, then a failed submit."""
+        errors = [result.error for result in self.results if result.error is not None]
+        return errors + ([self.submit_error] if self.submit_error is not None else [])
 
     def raise_unfinished(self) -> None:
-        if self.unfinished:
-            raise self.unfinished[0]
+        errors = self.unfinished
+        if len(errors) == 1:
+            raise errors[0]
+        if errors:
+            hints = list(dict.fromkeys(error.hint for error in errors if error.hint))
+            raise HiggsError(
+                f"{len(errors)} problems with the Requests of this command:\n"
+                + "\n".join(f"- {error.message}" for error in errors),
+                hint=" ".join(hints) or None,
+                code="requests_unfinished",
+            )
 
 
 def run_requests(
@@ -86,22 +103,61 @@ def run_requests(
         resolved = [inputs.resolve_inputs(client, project, body, cwd=cwd) for body in bodies]
         prices = [client.estimate(endpoint, item.params).usd for item in resolved]
         batch = Batch(results=[], warnings=confirm_price(ctx, project, prices, yes=yes).warnings)
-        for item, price in zip(resolved, prices, strict=True):
-            record = lifecycle.submit_request(
-                client, project, endpoint, item.params, inputs=item.inputs, name=name, estimate_usd=price
-            )
+        for index, (item, price) in enumerate(zip(resolved, prices, strict=True)):
+            try:
+                record = lifecycle.submit_request(
+                    client, project, endpoint, item.params, inputs=item.inputs, name=name, estimate_usd=price
+                )
+            except HiggsError as error:
+                if not batch.results:
+                    if len(bodies) > 1:
+                        error.hint = _join(error.hint, f"None of the {len(bodies)} Requests was submitted.")
+                    raise
+                batch.submit_error = error
+                batch.not_submitted = len(bodies) - index
+                error.hint = _join(error.hint, _partly_submitted(batch, len(bodies)))
+                break
             batch.results.append(RequestResult(record=record, path=requests.request_path(project, record.request_id)))
         if no_wait:
             return batch
         for result in batch.results:
-            with waiting_status(result.record.request_id, quiet=quiet) as on_progress:
-                record, status = lifecycle.wait_for_request(client, project, result.record, on_progress=on_progress)
-            result.record = record
-            if record.status == "completed":
-                result.generations = downloads.download_request(client, project, record, status)
-            else:
-                result.error = lifecycle.RequestNotCompleted(record)
+            try:
+                with waiting_status(result.record.request_id, quiet=quiet) as on_progress:
+                    record, status = lifecycle.wait_for_request(client, project, result.record, on_progress=on_progress)
+                result.record = record
+                if record.status == "completed":
+                    result.generations = downloads.download_request(client, project, record, status)
+                else:
+                    result.error = lifecycle.RequestNotCompleted(record)
+            except HiggsError as error:  # the others are still waited for; this one is reported
+                result.error = error
     return batch
+
+
+def _partly_submitted(batch: Batch, requested: int) -> str:
+    submitted = len(batch.results)
+    ids = ", ".join(result.record.request_id for result in batch.results)
+    was, billed = ("was", "is billed once it completes") if submitted == 1 else ("were", "are billed once they complete")
+    return (
+        f"{submitted} of the {requested} Requests {was} submitted before this ({ids}) and {billed}; "
+        f"the other {batch.not_submitted} were not submitted."
+    )
+
+
+def _join(hint: str | None, more: str) -> str:
+    return f"{hint} {more}" if hint else more
+
+
+def batch_json(batch: Batch) -> list[dict[str, Any]]:
+    """A convenience command's `--json` output: one item per requested Request, in order.
+
+    A body left unsubmitted by a failed submit is `{"request_id": null, "error": ..., "warnings": ...}`.
+    """
+    items = [result_json(result, batch.warnings) for result in batch.results]
+    if batch.submit_error is not None:
+        error = batch.submit_error.to_dict()
+        items += [{"request_id": None, "error": error, "warnings": batch.warnings}] * batch.not_submitted
+    return items
 
 
 def result_json(result: RequestResult, warnings: list[BudgetWarning]) -> dict[str, Any]:
@@ -119,7 +175,7 @@ def result_json(result: RequestResult, warnings: list[BudgetWarning]) -> dict[st
 def echo_result(result: RequestResult, project: Project) -> None:
     """One Request as text: where its record is, or the files it was downloaded to."""
     if result.generations is None:
-        if result.record.is_terminal:
+        if result.error is not None and result.record.is_terminal:
             return  # failed, nsfw or canceled: reported by `Batch.raise_unfinished`
         typer.echo(f"Submitted Request {result.record.request_id} ({result.record.status})")
         typer.echo(f"Record: {result.path}")

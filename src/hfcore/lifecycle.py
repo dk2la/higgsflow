@@ -108,8 +108,8 @@ def _submit_gave_up_hint(error: HiggsError, idempotency_key: str) -> str:
     """What happened and what to do once `SUBMIT_ATTEMPTS` retryable failures in a row are used up."""
     if isinstance(error, ApiError) and error.status == 429:
         return (
-            f"Nothing was submitted or charged (the API refused all {SUBMIT_ATTEMPTS} attempts). Retry once running "
-            "Requests finish; `higgs list --status pending` shows this Project's."
+            f"This Request was not submitted or charged (the API refused all {SUBMIT_ATTEMPTS} attempts). Retry once "
+            "running Requests finish; `higgs list --status pending` shows this Project's."
         )
     return (
         f"Gave up after {SUBMIT_ATTEMPTS} attempts. The submit may have reached the API (it would then run and be "
@@ -139,8 +139,8 @@ def wait_for_request(
                 gave_up = f"Stopped waiting after {POLL_ERROR_ATTEMPTS} failed status checks in a row. "
                 error.hint = (
                     f"{gave_up if wait is not None else (error.hint + ' ' if error.hint else '')}"
-                    f"Nothing is lost: Request {record.request_id} is still on the API side and its record is in "
-                    f"{project.requests_dir}; run `higgs sync` later to download it."
+                    f"Nothing is lost: Request {record.request_id} is still on the API side (billed only if it "
+                    f"completes) and its record is in {project.requests_dir}; run `higgs sync` later to download it."
                 )
                 raise
             clock.sleep(wait)

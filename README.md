@@ -93,7 +93,8 @@ or canceled Request ends with an error and downloads nothing.
 
 Retries are capped, not endless. A submit that hits a full queue (429, after each `Retry-After`) or a
 transient error (network, 5xx) is tried 5 times with the same Idempotency-Key; after a 429 the error says
-nothing was submitted or charged, so retry once running Requests finish (`higgs list --status pending`).
+that Request was not submitted or charged (and, with `--count N`, which earlier ones were), so retry once
+running Requests finish (`higgs list --status pending`).
 While waiting, 8 failed status checks in a row (429, 5xx, network) end the wait with an error; nothing is
 lost, the Request keeps running and `higgs sync` downloads it later.
 
@@ -171,7 +172,11 @@ fails fails the command after the others are downloaded. `--json` always prints 
 (`request_id`, `path`, `record`, `generations` once downloaded, `warnings`), even for one Request. A Request
 that ended `failed`, `nsfw` or `canceled` stays in the list, without `generations` and with
 `error: {code, message, hint, request_id, status}` (`request_nsfw`, ...); the others keep their downloaded
-files, and the exit code is 1 when any Request did not complete:
+files, and the exit code is 1 when any Request did not complete. A Request whose wait or download gave up keeps
+its place with that error too (`higgs sync` finishes it later). If a submit gives up partway (say the 2nd of 3
+on a full queue), the rest are not submitted: each gets an item `{"request_id": null, "error": ...}` whose hint
+names the Requests that were submitted (and are billed once they complete), and those are still waited for and
+downloaded:
 
 ```json
 [
