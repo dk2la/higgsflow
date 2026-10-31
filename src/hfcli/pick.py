@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from hfcore import generations
+from hfcore.config import working_dir
 from hfcli.output import JsonOpt, print_json
 from hfcli.projects import ProjectOpt, current_project
 
@@ -22,7 +22,7 @@ def pick(
 ) -> None:
     """Pick a Generation: copy it with its .json and Artifacts into final/."""
     target = current_project(project)
-    picked = generations.pick(target, generation, cwd=Path.cwd())
+    picked = generations.pick(target, generation, cwd=working_dir())
     if as_json:
         print_json(picked)
         return

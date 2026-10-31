@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -10,6 +9,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from hfcore import generations, references
+from hfcore.config import working_dir
 from hfcli.output import JsonOpt, console, print_json
 from hfcli.projects import ProjectOpt, current_project
 
@@ -28,7 +28,7 @@ def save(
 ) -> None:
     """Copy a Generation with its .json and Artifacts into references/ as <name>."""
     target = current_project(project)
-    saved = generations.save_reference(target, generation, name, cwd=Path.cwd(), force=force)
+    saved = generations.save_reference(target, generation, name, cwd=working_dir(), force=force)
     if as_json:
         print_json(saved)
     else:
