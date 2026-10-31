@@ -143,6 +143,15 @@ command with `invalid_project_config` before anything is submitted.
 `project.toml`; `--project <name>` overrides it. There is no global "active project".
 Outside a project, project-scoped commands fail with a hint to run `higgs init` or pass `--project`.
 
+**Relative paths** typed by the user (Inputs in `-p`, `--prompt-file`, the `pick` / `ref save` Generation,
+`soul train` images) are relative to `hfcore.config.working_dir()`: the host's `$PWD`, which `bin/higgs`
+passes as `HIGGS_HOST_PWD`, else the process's current directory. From a host folder inside the projects
+root that is the container's working directory too. From one outside it the container runs in the projects
+root, but paths still resolve against the (unmounted) host folder, so they fail as
+`input_outside_projects_root` (Inputs, Soul ID images, Generation paths) or `prompt_file_outside_project`
+instead of silently naming a file in the projects root (#44). A bare Generation file name is still looked
+up in the Project's `generations/`.
+
 **Generation naming:**
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN.<ext>`,
 e.g. `20261030-1412_kling-3-0-pro_i2v_sunset-beach_v02.mp4` (Kling 3.0 Pro, `kling-video/v3.0/pro/image-to-video`)

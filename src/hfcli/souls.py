@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -18,6 +17,7 @@ from rich.table import Table
 
 from hfcore import credentials, souls
 from hfcore.api import ApiClient
+from hfcore.config import working_dir
 from hfcli.output import JsonOpt, console, err_console, print_json
 from hfcli.projects import ProjectOpt, current_project
 
@@ -46,7 +46,7 @@ def train(
     """Train a Soul ID from Project images and register it by name."""
     target = current_project(project)
     with ApiClient(credentials.load_credentials()) as client:
-        soul = souls.train_soul(client, target, name, images or [], version=version, cwd=Path.cwd(), force=force)
+        soul = souls.train_soul(client, target, name, images or [], version=version, cwd=working_dir(), force=force)
         if not no_wait:
             with _waiting(soul, quiet=as_json) as on_progress:
                 soul = souls.wait_for_soul(client, soul, on_progress=on_progress)

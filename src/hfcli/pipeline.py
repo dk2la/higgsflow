@@ -22,7 +22,7 @@ import typer
 from hfcore import credentials, downloads, inputs, lifecycle, requests, validation
 from hfcore.api import ApiClient
 from hfcore.catalog import load_catalog
-from hfcore.config import config_dir
+from hfcore.config import config_dir, working_dir
 from hfcore.projects import Project
 from hfcore.requests import RequestRecord
 from hfcore.spend import BudgetWarning
@@ -77,7 +77,7 @@ def run_requests(
     as one total, before anything is submitted. The Requests share `name`, so they get
     consecutive `vNN`. `quiet` hides the waiting spinner (JSON mode).
     """
-    cwd = Path.cwd()
+    cwd = working_dir()
     if validate:
         catalog = load_catalog(config_dir())
         for body in bodies:

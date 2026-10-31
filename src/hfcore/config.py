@@ -19,6 +19,19 @@ def config_dir() -> Path:
     return Path(override).expanduser() if override else Path.home() / ".config" / "higgs"
 
 
+def working_dir() -> Path:
+    """The folder that relative paths typed by the user are relative to.
+
+    `bin/higgs` runs the container in the host's `$PWD` when it is inside the projects root
+    and in the projects root otherwise (the host folder is not mounted), passing the host's
+    `$PWD` as `HIGGS_HOST_PWD`. Resolving against it means a relative path typed outside the
+    projects root lands outside it (and is rejected as such) instead of silently naming a
+    file in the projects root. Without the wrapper it is the current directory.
+    """
+    host = os.environ.get("HIGGS_HOST_PWD")
+    return Path(host) if host else Path.cwd()
+
+
 def projects_root() -> Path:
     override = os.environ.get("HIGGS_PROJECTS_ROOT")
     if override:
