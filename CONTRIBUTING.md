@@ -45,10 +45,13 @@ For an urgent fix to a release: branch off `master` (`hotfix/…`), open a pull 
 
 ## Checks
 
-CI (`.github/workflows/ci.yml`) builds the Docker image and runs the tests and mypy inside
-it on every pull request. Run the same checks locally before pushing:
+CI (`.github/workflows/ci.yml`) builds the Docker image and runs the tests, mypy and ruff
+inside it on every pull request. Run the same checks locally before pushing:
 
 ```sh
 scripts/dev test
 scripts/dev typecheck
+scripts/dev lint        # --fix sorts imports and applies the other safe fixes
 ```
+
+Review applies [`CODING_STANDARDS.md`](CODING_STANDARDS.md) on top of these checks.

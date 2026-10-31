@@ -1,6 +1,7 @@
 """Price, Spend and Budget: `POST /estimate/{endpoint}` and its confirmation before every submit."""
 
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -119,7 +120,7 @@ def test_the_generation_metadata_records_the_price(higgs, project, api_key, resp
 
     assert result.exit_code == 0, result.output
     metadata_path = json.loads(result.output)["generations"][0]["metadata_path"]
-    assert json.loads(open(metadata_path).read())["price_usd"] == "0.25"
+    assert json.loads(Path(metadata_path).read_text())["price_usd"] == "0.25"
 
 
 def set_budget(project, budget: str) -> None:

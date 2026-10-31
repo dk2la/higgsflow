@@ -21,8 +21,8 @@ from hfcore.api import ApiClient, RequestStatus
 from hfcore.catalog import Catalog
 from hfcore.downloads import DownloadedGeneration, GenerationMetadata, download_request
 from hfcore.errors import HiggsError
-from hfcore.projects import Project
 from hfcore.naming import Naming
+from hfcore.projects import Project
 from hfcore.requests import RequestRecord, list_requests, quiet_catalog, request_model
 
 # `--status pending` stands for every status that is not terminal yet.

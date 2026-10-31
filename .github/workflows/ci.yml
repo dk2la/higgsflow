@@ -1,5 +1,5 @@
-# Runs the same checks as `scripts/dev test` and `scripts/dev typecheck`, inside the
-# project's Docker image (ADR 0003), so building that image is checked too.
+# Runs the same checks as `scripts/dev test`, `scripts/dev typecheck` and `scripts/dev lint`,
+# inside the project's Docker image (ADR 0003), so building that image is checked too.
 name: CI
 
 on:
@@ -33,3 +33,6 @@ jobs:
 
       - name: Typecheck
         run: docker run --rm --entrypoint mypy higgsflow:ci
+
+      - name: Lint
+        run: docker run --rm --entrypoint ruff higgsflow:ci check
