@@ -8,8 +8,7 @@ the API has accepted the action.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
+from hfcore import clock
 from hfcore.api import ApiClient
 from hfcore.projects import Project
 from hfcore.requests import RequestRecord, load_request, save_request
@@ -20,7 +19,7 @@ def cancel_request(client: ApiClient, project: Project, request_id: str) -> Requ
     record = load_request(project, request_id)
     client.cancel(request_id)
     record.status = "canceled"
-    record.updated_at = datetime.now(UTC)
+    record.updated_at = clock.now()
     save_request(project, record)
     return record
 
@@ -29,7 +28,7 @@ def delete_request(client: ApiClient, project: Project, request_id: str) -> Requ
     """Delete a finished Request's data on the API side and record when; local files stay."""
     record = load_request(project, request_id)
     client.delete(request_id)
-    now = datetime.now(UTC)
+    now = clock.now()
     record.deleted_at = now
     record.updated_at = now
     save_request(project, record)
