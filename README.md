@@ -155,7 +155,17 @@ the Endpoint has a `seed`, each Request gets its own: `--seed S` gives S, S+1, S
 random seeds in the seed's range (a single Request without `--seed` sends none). A Model's own `batch_size`
 stays an ordinary `-p` parameter. Without `--no-wait` every Request is waited for and downloaded; one that
 fails fails the command after the others are downloaded. `--json` always prints a list, one object per Request
-(`request_id`, `path`, `record`, `generations` once downloaded, `warnings`), even for one Request.
+(`request_id`, `path`, `record`, `generations` once downloaded, `warnings`), even for one Request. A Request
+that ended `failed`, `nsfw` or `canceled` stays in the list, without `generations` and with
+`error: {code, message, hint, request_id, status}` (`request_nsfw`, ...); the others keep their downloaded
+files, and the exit code is 1 when any Request did not complete:
+
+```json
+[
+  {"request_id": "req-1", "record": {"status": "completed", ...}, "generations": [{"path": ".../..._v01.mp4", ...}], ...},
+  {"request_id": "req-2", "record": {"status": "nsfw", ...}, "error": {"code": "request_nsfw", "request_id": "req-2", "status": "nsfw", ...}, ...}
+]
+```
 
 ### Images: `higgs image t2i|i2i`
 

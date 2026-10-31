@@ -154,8 +154,10 @@ def generate(
     bodies = common_flags.vary_seeds(endpoint, body, count)
     batch = run_requests(ctx, target, endpoint.id, bodies, name=name, yes=yes, no_wait=no_wait, quiet=as_json)
     if as_json:
-        batch.raise_unfinished()
+        # Every Request, finished or not, in one document; any that did not complete fails the command.
         print_json([result_json(result, batch.warnings) for result in batch.results])
+        if batch.unfinished:
+            raise typer.Exit(1)
         return
     for result in batch.results:
         echo_result(result, target)

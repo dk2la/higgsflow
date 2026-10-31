@@ -7,12 +7,13 @@ the Inputs → estimate every body → confirm the total price once → submit e
 
 A command then prints the `Batch` (`result_json` / `echo_result`) and calls
 `Batch.raise_unfinished()`, so a failed Request still fails the command after the
-others were reported.
+others were reported. In `--json` mode a Request that did not complete carries its error
+in its own item (`result_json`), so one JSON document reports every Request.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -37,16 +38,21 @@ class RequestResult:
     path: Path
     # None until downloaded: with `no_wait`, or when the Request did not complete.
     generations: list[downloads.DownloadedGeneration] | None = None
+    # Set when the Request ended `failed`, `nsfw` or `canceled`.
+    error: lifecycle.RequestNotCompleted | None = None
 
 
 @dataclass
 class Batch:
-    """The Requests of one command, the Budget warnings they were confirmed with, and
-    the errors of those that ended `failed`, `nsfw` or `canceled`."""
+    """The Requests of one command and the Budget warnings they were confirmed with."""
 
     results: list[RequestResult]
     warnings: list[BudgetWarning]
-    unfinished: list[lifecycle.RequestNotCompleted] = field(default_factory=list)
+
+    @property
+    def unfinished(self) -> list[lifecycle.RequestNotCompleted]:
+        """The errors of the Requests that ended `failed`, `nsfw` or `canceled`."""
+        return [result.error for result in self.results if result.error is not None]
 
     def raise_unfinished(self) -> None:
         if self.unfinished:
@@ -94,15 +100,18 @@ def run_requests(
             if record.status == "completed":
                 result.generations = downloads.download_request(client, project, record, status)
             else:
-                batch.unfinished.append(lifecycle.RequestNotCompleted(record))
+                result.error = lifecycle.RequestNotCompleted(record)
     return batch
 
 
 def result_json(result: RequestResult, warnings: list[BudgetWarning]) -> dict[str, Any]:
-    """One Request in `--json` output: `request_id`, `path`, `record`, `generations` (once downloaded), `warnings`."""
+    """One Request in `--json` output: `request_id`, `path`, `record`, `generations` (once downloaded),
+    `error` (when it did not complete), `warnings`."""
     data: dict[str, Any] = {"request_id": result.record.request_id, "path": str(result.path), "record": result.record}
     if result.generations is not None:
         data["generations"] = result.generations
+    if result.error is not None:
+        data["error"] = result.error.to_dict()
     data["warnings"] = warnings
     return data
 
