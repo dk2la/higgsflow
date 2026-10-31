@@ -3,8 +3,7 @@
 The rules a reviewer applies to a diff. Mechanical rules live in the checks, so a green CI
 run already covers them:
 
-- `scripts/dev lint` (ruff): import order (`hfcore` before `hfcli`), unused imports, bugbear,
-  pyupgrade, simplify, and no `print` in `hfcore`. Config in `pyproject.toml`.
+- `scripts/dev lint` (ruff), with its rules in `pyproject.toml` → `[tool.ruff]`.
 - `scripts/dev typecheck` (mypy, strict).
 - `tests/test_architecture.py`: `hfcore` loads no Typer, Rich or Click, and reads the time
   only through `hfcore.clock`.
@@ -37,10 +36,10 @@ the glossary in the same pull request.
 
 ## Layers
 
-`hfcore` is the core that the stage 2 web server will also call (`DESIGN.md` §3). It returns
-Pydantic models and raises `HiggsError`. It reports progress through callbacks. Wording for
-the terminal, prompts, exit codes and output formats belong in `hfcli`. `hfcli` stays thin:
-logic that a web server would also need goes down into `hfcore`.
+`hfcore` is the core that the stage 2 web server will also call (`DESIGN.md` §3). It owns
+error codes, messages and hints (`HiggsError`), and reports through return values, progress
+callbacks and `HiggsWarning`. `hfcli` owns rendering, prompts, exit codes and output
+formats, and stays thin: logic that a web server would also need goes down into `hfcore`.
 
 ## Complete fixes
 
@@ -51,7 +50,5 @@ handled. When some are left out on purpose, it says why.
 
 ## Tests
 
-Tests go through the public interface: invoke a CLI command, and replace HTTP at the
-transport level with respx (`DESIGN.md` §10). Use the fixtures in `tests/conftest.py` for
-the environment and the working directory. A bug fix comes with a test that is **red**
-without the fix.
+Tests follow `DESIGN.md` §10, using the fixtures in `tests/conftest.py`. A bug fix comes with
+a test that is **red** without the fix.
