@@ -10,12 +10,9 @@ metadata files, hidden files and the Artifacts a Reference's `.json` lists are n
 from __future__ import annotations
 
 import difflib
-import glob
 import json
 import mimetypes
-import os
 import re
-import shutil
 from pathlib import Path
 from typing import Any
 

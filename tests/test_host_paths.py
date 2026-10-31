@@ -68,8 +68,52 @@ def test_a_relative_prompt_file_from_outside_the_projects_root_is_not_read_from_
     )
 
     error = error_of(result)
-    assert error["code"] == "prompt_file_outside_project"
+    assert error["code"] == "input_outside_projects_root"
+    assert "prompt.txt" in error["message"]
+    assert "prompts/" in error["hint"]
     assert not respx_mock.calls
+
+
+@pytest.mark.parametrize("value", ["photo.heic", "~/Desktop/clip.mov", "shots/face.HEIC"])
+def test_a_file_name_of_any_type_from_outside_the_projects_root_is_rejected(
+    higgs, project, desktop, api_key, respx_mock, value
+):
+    # No file outside the projects root can be seen, so the name alone makes it an Input.
+    result = higgs(
+        "gen", ENDPOINT, "-p", "prompt=a cat", "-p", f"image_url={value}",
+        "--project", "demo", "--no-validate", "--no-wait", "--json", "--yes",
+    )
+
+    error = error_of(result)
+    assert error["code"] == "input_outside_projects_root"
+    assert value in error["message"]
+    assert not respx_mock.calls
+
+
+def test_an_absolute_file_name_outside_the_projects_root_is_rejected(higgs, project, tmp_path, api_key, respx_mock):
+    result = higgs(
+        "gen", ENDPOINT, "-p", "prompt=a cat", "-p", f"image_url={tmp_path / 'elsewhere' / 'photo.heic'}",
+        "--project", "demo", "--no-validate", "--no-wait", "--json", "--yes",
+    )
+
+    assert error_of(result)["code"] == "input_outside_projects_root"
+    assert not respx_mock.calls
+
+
+@pytest.mark.parametrize("prompt", ["a logo for acme.com", "version v2.5", "16:9"])
+def test_plain_strings_from_outside_the_projects_root_are_still_sent_as_they_are(
+    higgs, project, desktop, api_key, respx_mock, estimate, prompt
+):
+    submit = respx_mock.post(f"https://api.higgsfield.ai/{ENDPOINT}").mock(
+        return_value=httpx.Response(200, json={"status": "queued", "request_id": "req-1"})
+    )
+
+    result = higgs(
+        "gen", ENDPOINT, "-p", f"prompt={prompt}", "--project", "demo", "--no-validate", "--no-wait", "--json", "--yes"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(submit.calls.last.request.content)["prompt"] == prompt
 
 
 @pytest.mark.parametrize("command", [("pick",), ("ref", "save")])
@@ -87,15 +131,17 @@ def test_a_relative_generation_path_from_outside_the_projects_root_is_rejected(
     assert "inputs/" not in error["hint"]
 
 
+@pytest.mark.parametrize("image", ["face.jpg", "face.heic", "my face.heic", "face"])
 def test_soul_train_images_from_outside_the_projects_root_are_rejected(
-    higgs, project, projects_root, desktop, api_key, respx_mock
+    higgs, project, projects_root, desktop, api_key, respx_mock, image
 ):
     write(projects_root / "face.jpg", JPEG)
 
-    result = higgs("soul", "train", "alice", "face.jpg", "--project", "demo", "--json")
+    result = higgs("soul", "train", "alice", image, "--project", "demo", "--json")
 
     error = error_of(result)
     assert error["code"] == "input_outside_projects_root"
+    assert image in error["message"]
     assert not respx_mock.calls
 
 

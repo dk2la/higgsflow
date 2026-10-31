@@ -106,7 +106,7 @@ def _submit_with_retries(
 
 def _submit_gave_up_hint(error: HiggsError, idempotency_key: str) -> str:
     """What happened and what to do once `SUBMIT_ATTEMPTS` retryable failures in a row are used up."""
-    if isinstance(error, ApiError) and error.status == 429:
+    if not submit_may_have_reached_api(error):
         return (
             f"This Request was not submitted or charged (the API refused all {SUBMIT_ATTEMPTS} attempts). Retry once "
             "running Requests finish; `higgs list --status pending` shows this Project's."
@@ -116,6 +116,18 @@ def _submit_gave_up_hint(error: HiggsError, idempotency_key: str) -> str:
         f"billed once, under Idempotency-Key {idempotency_key}), but no record was written, so higgs cannot track "
         "it; check the Console before submitting again."
     )
+
+
+def submit_may_have_reached_api(error: HiggsError) -> bool:
+    """Whether a submit that failed with `error` may still have created (and will bill) the Request.
+
+    True when no answer came (a network failure) or the API failed on its side (5xx, except a
+    disabled model): the Request may then exist under its Idempotency-Key. Any other answer
+    (4xx, including a full queue) means it was not submitted.
+    """
+    if isinstance(error, ApiError):
+        return error.status >= 500 and error.code != "model_unavailable"
+    return error.code == "network_error"
 
 
 def wait_for_request(

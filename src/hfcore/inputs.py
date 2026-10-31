@@ -8,7 +8,10 @@ replaced by its `public_url`.
 Which values are files: a string value is an Input when it names an existing file
 (relative to `cwd`, or absolute), or when it looks like a path to a media file (ends in
 an allowed extension such as `.jpg`), in which case a missing file is an error rather
-than a string silently sent to the API. URLs (`scheme://...`) are never Inputs.
+than a string silently sent to the API. URLs (`scheme://...`) are never Inputs. Outside the
+projects root nothing can be checked on disk (the host folder is not mounted, ADR 0003), so
+there any value that looks like a file name (`photo.heic`: no whitespace, an extension) is an
+Input too, and fails as `input_outside_projects_root` instead of going to the API as a string.
 
 A value `@name` (no spaces) is a Reference: the one file `references/<name>.<ext>`
 (`hfcore.references`), uploaded and recorded like any Input with `source="@name"`.
@@ -20,6 +23,7 @@ Convenience flags (`--image @hero`) pass their values through here and get the s
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,12 +34,15 @@ from pydantic import BaseModel
 from hfcore import config, references, uploads
 from hfcore.api import ApiClient
 from hfcore.errors import HiggsError
-from hfcore.projects import Project
+from hfcore.projects import Project, check_inside_projects_root
 
 _CHUNK = 1 << 20
 
 # Extensions that make a string look like a path even when no such file exists.
 MEDIA_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif", ".wav", ".mp4"})
+# A string that looks like a file name with any extension: no whitespace, and an extension that
+# starts with a letter (`photo.heic`, `~/Desktop/clip.mov`; not `v2.5` or `a logo for acme.com`).
+_FILE_NAME = re.compile(r"\S*\.[A-Za-z][A-Za-z0-9]{0,7}")
 ALLOWED_TYPES = "jpeg, png, webp, gif, wav or mp4"  # DESIGN.md §9
 IMAGE_TYPES = "jpeg, png, webp or gif"
 _NOT_MP4_BRANDS = frozenset(
@@ -166,6 +173,9 @@ def _file_path(value: str, cwd: Path) -> Path | None:
         path = cwd / Path(value).expanduser()  # an absolute value stays absolute
         if path.is_file() or path.suffix.lower() in MEDIA_EXTENSIONS:
             return path
+        # Outside the projects root no file can be seen, so its name is all there is to go by.
+        if _FILE_NAME.fullmatch(value) and not path.resolve().is_relative_to(config.projects_root().resolve()):
+            return path
     except (OSError, ValueError):  # e.g. a long prompt is "File name too long"
         pass
     return None
@@ -173,21 +183,12 @@ def _file_path(value: str, cwd: Path) -> Path | None:
 
 def _check(param: str, source: str, path: Path, project: Project, *, images_only: bool = False) -> _Found:
     """Everything that can be checked locally, before any upload."""
-    root = config.projects_root().resolve()
+    check_inside_projects_root(path, source, project, what="Input", folder="inputs")
     real = path.resolve()
-    if not real.is_relative_to(root):
-        raise HiggsError(
-            f"Input {source} is outside the projects root {root}",
-            hint=(
-                f"Only the projects root is visible to higgs. Copy the file into the Project's inputs/ "
-                f"(e.g. cp {source} {project.path / 'inputs'}/) and pass that path."
-            ),
-            code="input_outside_projects_root",
-        )
     if not real.is_file():
         raise HiggsError(
             f"Input {source} not found ({real})",
-            hint="Check the path; relative paths are relative to the current directory.",
+            hint="Check the path; relative paths are relative to the folder higgs was run in.",
             code="input_not_found",
         )
     content_type = sniff_content_type(_head(real))

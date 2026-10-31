@@ -154,9 +154,12 @@ Outside a project, project-scoped commands fail with a hint to run `higgs init` 
 passes as `HIGGS_HOST_PWD`, else the process's current directory. From a host folder inside the projects
 root that is the container's working directory too. From one outside it the container runs in the projects
 root, but paths still resolve against the (unmounted) host folder, so they fail as
-`input_outside_projects_root` (Inputs, Soul ID images, Generation paths) or `prompt_file_outside_project`
-instead of silently naming a file in the projects root (#44). A bare Generation file name is still looked
-up in the Project's `generations/`.
+`input_outside_projects_root` (Inputs, `--prompt-file`, Soul ID images, Generation paths) instead of
+silently naming a file in the projects root (#44); a prompt file inside the projects root but outside the
+Project is `prompt_file_outside_project`. Nothing outside the projects root can be checked on disk, so there a
+`-p` value counts as an Input when it looks like a file name (no whitespace, an extension starting with a
+letter: `photo.heic`, `~/Desktop/clip.mov`, not `v2.5` or a prompt) and every non-URL `soul train` image is
+taken as a file. A bare Generation file name is still looked up in the Project's `generations/`.
 
 **Generation naming:**
 `YYYYMMDD-HHMM_<model-slug>_<mode>_<slug>_vNN.<ext>`,
@@ -299,7 +302,10 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
 - **One subcommand per Mode code.** `higgs video t2v|i2v|ref|vref|edit|extend|motion|restyle` (each Mode
   code of §6 is its own subcommand, so `vref` and `restyle` are not folded into other commands; #17), and
   `higgs image t2i|i2i` (#18). A subcommand only declares the options that make sense for its Mode and calls
-  `hfcli.convenience.generate(kind=..., mode=..., flags=...)`.
+  `hfcli.convenience.generate(kind=..., mode=..., flags=...)`. The one exception is `--preset`: every
+  subcommand declares it, because whether a Preset exists depends on the Model, not the Mode, and on a Model
+  without Presets it fails with `unsupported_flag` (a JSON error under `--json`) rather than Typer's
+  "No such option" (#49).
 - **Inputs.** `--video` → `video_url`, else `video_urls` (a list of one); `--audio` → `audio_url`, else
   `audio_urls`; `--ref` (repeatable) → `image_urls`, in the order given, so the n-th `--ref` is `<<<image_n>>>`.
   `--ref` takes images only: where the references are videos (Wan 2.6 ref, Kling O3/Omni vref) the video is
@@ -334,7 +340,11 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   the submits; the Requests already submitted are still waited for and listed, and each unsubmitted body is an
   item `{"request_id": null, "error", "warnings"}`, the error's hint naming the submitted ids ("1 of the 3
   Requests was submitted before this (req-1) and is billed once it completes; the other 2 were not submitted").
-  If the first submit fails, nothing was submitted and the error is raised as usual. In text mode one problem
+  When the submit gave up on network/5xx failures, the Request it was submitting may exist after all
+  (`hfcore.lifecycle.submit_may_have_reached_api`), so the hint says "this one may have been submitted too
+  (see above), and the other 1 was not submitted" instead. If the first submit fails, the error is raised as
+  usual, its hint adding "None of the 3 Requests was submitted" (after a refusal such as a 429) or "The other
+  2 Requests were not submitted" (after network/5xx failures). In text mode one problem
   is raised as itself, several as `requests_unfinished` listing them all. `higgs gen` submits one Request, so a
   failure there is the usual top-level JSON error.
 - **Images (#18; `hfcli.image`).** `higgs image t2i` reaches the 14 `t2i` Endpoints (also the Models that take
@@ -430,9 +440,10 @@ the price — that still needs an explicit `--yes`, otherwise it is an error too
    `POST /files/generate-upload-url` → `PUT` with `upload_headers` → `public_url`.
    Cached by sha256 for 7 days (the API deletes uploads after 7 days); an entry is reused while
    more than an hour of it is left. A string parameter value (also inside lists and objects) is a
-   local file when it names an existing file (relative to the current directory, or absolute) or
-   ends in an allowed media extension (`.jpg`, `.png`, `.mp4`, …; then a missing file is an error);
-   URLs never are. The type is judged by the file's content, not its name. Every file is checked
+   local file when it names an existing file (relative to `hfcore.config.working_dir()`, the folder
+   higgs was run in, or absolute; see §5 "Relative paths") or ends in an allowed media extension (`.jpg`,
+   `.png`, `.mp4`, …; then a missing file is an error); outside the projects root, any value that looks like
+   a file name is one, and fails as `input_outside_projects_root`. URLs never are. The type is judged by the file's content, not its name. Every file is checked
    (projects root, type) before the first upload. The Request record lists its Inputs
    (`param`, `source`, `path`, `sha256`, `content_type`, `public_url`).
 3. Exact price: `POST /estimate/{endpoint}` with the same body → `{"usd": "..."}`.
