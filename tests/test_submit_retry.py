@@ -86,7 +86,7 @@ def test_a_queue_that_stays_full_gives_up_and_says_nothing_was_submitted(higgs, 
     # SUBMIT_ATTEMPTS = 5: four waits for Retry-After, then the fifth refusal is final.
     assert route.call_count == 5
     assert clock.waits == [30.0] * 4
-    assert "Nothing was submitted or charged" in error["hint"]
+    assert "This Request was not submitted or charged" in error["hint"]
     assert "higgs list --status pending" in error["hint"]
     assert not list((project / ".hf" / "requests").iterdir())
 

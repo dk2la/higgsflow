@@ -39,7 +39,7 @@ from hfcore.errors import HiggsError
 from hfcore.projects import load_config
 from hfcli.output import ask, print_json
 from hfcli.params import parse_params
-from hfcli.pipeline import echo_result, result_json, run_requests
+from hfcli.pipeline import batch_json, echo_result, run_requests
 from hfcli.projects import current_project
 
 ModelOpt = Annotated[str | None, typer.Option("--model", "-m", help="Model slug or name, e.g. kling-3.0.")]
@@ -154,7 +154,7 @@ def generate(
     batch = run_requests(ctx, target, endpoint.id, bodies, name=name, yes=yes, no_wait=no_wait, quiet=as_json)
     if as_json:
         # Every Request, finished or not, in one document; any that did not complete fails the command.
-        print_json([result_json(result, batch.warnings) for result in batch.results])
+        print_json(batch_json(batch))
         if batch.unfinished:
             raise typer.Exit(1)
         return
