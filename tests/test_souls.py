@@ -7,9 +7,9 @@ with `id`, `name`, `model_version`, `status`, `thumbnail_url`, `created_at`,
 """
 
 import itertools
-from datetime import UTC, datetime
 import json
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 

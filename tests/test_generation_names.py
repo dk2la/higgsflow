@@ -145,7 +145,9 @@ def test_several_generations_get_numbered_suffixes(higgs, project, api_key, resp
         "20261030-1200_soul-v2_t2i_a-cat_v01-2.jpg",
     ]
     day = project / "generations" / "2026-10-30"
-    for name, url in zip(names(output), ["https://cdn.example.com/image-1.jpg", "https://cdn.example.com/image-2.jpg"]):
+    for name, url in zip(
+        names(output), ["https://cdn.example.com/image-1.jpg", "https://cdn.example.com/image-2.jpg"], strict=True
+    ):
         assert json.loads((day / f"{name}.json").read_text())["url"] == url
 
 

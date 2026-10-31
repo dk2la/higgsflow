@@ -161,9 +161,11 @@ def download(
     """Download a completed Request's Generations again (while its links are alive)."""
     target = current_project(project)
     record = requests.load_request(target, request_id)
-    with ApiClient(credentials.load_credentials()) as client:
-        with _spinner(f"Downloading Request {request_id}...", quiet=as_json):
-            generations = tracking.download_again(client, target, record)
+    with (
+        ApiClient(credentials.load_credentials()) as client,
+        _spinner(f"Downloading Request {request_id}...", quiet=as_json),
+    ):
+        generations = tracking.download_again(client, target, record)
     if as_json:
         print_json({"request_id": record.request_id, "generations": generations})
         return

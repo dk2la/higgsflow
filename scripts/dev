@@ -2,6 +2,7 @@
 # Development commands, all run inside the Docker Desktop container (ADR 0003).
 #   scripts/dev test [pytest args]   run the test suite
 #   scripts/dev typecheck            run mypy
+#   scripts/dev lint [ruff args]     run ruff check (e.g. --fix)
 #   scripts/dev shell                open a shell in the dev container
 #   scripts/dev catalog              rebuild src/hfcore/catalog/catalog.json from catalog/
 set -euo pipefail
@@ -24,7 +25,8 @@ shift || true
 case "$command" in
   test) run pytest "$@" ;;
   typecheck) run mypy "$@" ;;
+  lint) run ruff check "$@" ;;
   shell) run bash "$@" ;;
   catalog) run python -m hfcore.catalog.build "$@" ;;
-  *) echo "usage: scripts/dev {test|typecheck|shell|catalog} [args]" >&2; exit 2 ;;
+  *) echo "usage: scripts/dev {test|typecheck|lint|shell|catalog} [args]" >&2; exit 2 ;;
 esac

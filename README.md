@@ -475,11 +475,12 @@ of unknown shape it has `raw` (the body), an empty `by_model` and `cost_usd: nul
 
 ## Development
 
-Development, type checking and tests run in the same container:
+Development, type checking, linting and tests run in the same container:
 
 ```sh
 scripts/dev test               # pytest (extra args are passed through, e.g. scripts/dev test -k version)
 scripts/dev typecheck          # mypy --strict
+scripts/dev lint               # ruff check (--fix applies the safe fixes)
 scripts/dev shell              # a shell in the dev container
 scripts/dev catalog            # rebuild src/hfcore/catalog/catalog.json from the snapshots in catalog/
 ```

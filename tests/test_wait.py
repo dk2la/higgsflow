@@ -1,5 +1,6 @@
 """`higgs gen` without `--no-wait`: polling, terminal statuses and downloading Generations."""
 
+import itertools
 import json
 from typing import Any
 
@@ -90,7 +91,7 @@ def test_polling_backs_off_from_two_seconds_to_at_most_ten_with_jitter(higgs, pr
     waits = clock.waits
     assert len(waits) == 12  # one wait after each non-terminal status, none after the last
     assert 2.0 <= waits[0] <= 2.5
-    assert all(later > earlier for earlier, later in zip(waits[:4], waits[1:5]))  # backing off
+    assert all(later > earlier for earlier, later in itertools.pairwise(waits[:5]))  # backing off
     assert all(wait <= 10.0 for wait in waits)
     assert all(wait >= 9.0 for wait in waits[6:])  # reached the cap
     assert len(set(waits[6:])) > 1  # jittered, not a fixed interval
