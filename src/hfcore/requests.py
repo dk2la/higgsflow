@@ -44,7 +44,8 @@ class RequestRecord(BaseModel):
     status: str
     submitted_at: datetime
     updated_at: datetime
-    idempotency_key: str
+    # None only for a Request rebuilt from Generation metadata (`hfcore.tracking.project_history`).
+    idempotency_key: str | None = None
     status_url: str | None = None
     cancel_url: str | None = None
     # Seconds the API keeps the data after the Request finishes (from the submit response).

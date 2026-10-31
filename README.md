@@ -74,7 +74,10 @@ check, a completed one is downloaded exactly once (its record gets `downloaded_a
 canceled one is recorded and left alone, and one whose links have expired is reported without an API
 call. If a Request cannot be synced, the others still are and `sync` exits with an error; run it again.
 `download` fails before any API call once the Request's `expires_at` has passed or it was deleted with
-`higgs delete`. `list` reads only `.hf/requests/` (no API calls, no key needed); `--status` is repeatable
+`higgs delete`. `list` reads only local files (no API calls, no key needed): the Request records in
+`.hf/requests/` and the Generation `.json` files in `generations/`, so each Request shows its Generation files,
+and one whose record is missing (a Project copied without `.hf/`) still appears, marked `recovered` (in
+`--json`: `"generations": [...]`, `"recovered": true|false` on every item). `--status` is repeatable
 (`pending` = not finished yet), `--date` picks one day. `--model` takes a Model as `higgs models list` shows
 it (`kling-3.0` or `"Kling 3.0"`: every tier and Mode of that Model, not Kling 3.0 Turbo) and also matches
 any Request whose Endpoint id or model slug contains the text (`--model kling-video`, `--model soul`).

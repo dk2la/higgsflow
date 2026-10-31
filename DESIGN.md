@@ -94,7 +94,13 @@ The default projects root is `~/hf-projects` (configurable). `higgs init <name>`
 - on submission, `.hf/requests/<request_id>.json` is created immediately (the ID survives a dropped connection);
 - after download, next to the file — `<name>.mp4.json`: endpoint, all parameters, prompt,
   input files/references, request_id, price, links, timestamps;
-- `list`/`status` scan the files. An index on top can be added later (e.g. for the web UI).
+- `list`/`status` scan the files. `list` (`hfcore.tracking.project_history`) reads `.hf/requests/*.json` and
+  every Generation `.json` in `generations/*/` (through `hfcore.generations.list_generations`, the same
+  metadata reader as `pick`/`ref save`) and merges them by `request_id`: each item is the Request record
+  plus `generations` (its Generation files, relative to the Project) and `recovered: false`; a request id
+  that only Generation metadata knows (a Project copied without `.hf/`, a record deleted by hand) is rebuilt
+  from that metadata as a `completed` Request with `recovered: true` (no `idempotency_key`), so the history
+  survives without `.hf/`. Listing writes nothing. An index on top can be added later (e.g. for the web UI).
 
 Global: `~/.config/higgs/` — credentials, config (projects root), `models.local.toml`,
 `catalog.json` (written by `higgs models sync`), `souls.toml` (Soul ID registry: name → id;
