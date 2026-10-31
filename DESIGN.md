@@ -356,8 +356,8 @@ How the convenience layer works (#16; `hfcore.flags`, `hfcli.convenience`, `hfcl
   registered (`soul_not_found`); the versions match (`soul_version_mismatch`); the training completed
   (`soul_not_ready` / `soul_training_failed` — a registered status that is not final is refreshed from the
   API once first, so a `--no-wait` training that finished since is usable at once).
-- Soul ID training is not a Request: it is account-scoped, is not written to the project's `.hf/` and
-  does not count toward project spend. `soul train` polls `GET /v1/custom-references/{id}` the same
+- Soul ID training is not a Request: it is account-scoped, only its upload cache is written to the
+  project's `.hf/` (no Request record) and it does not count toward project spend. `soul train` polls `GET /v1/custom-references/{id}` the same
   way as a generation and supports `--no-wait`; `soul status` checks on it later.
   (#21; `hfcore.souls`, `hfcli.souls`.) Only the training images' upload cache lands in the Project's
   `.hf/uploads.json`; `.hf/requests/` and Spend are untouched. `soul train <name> <images...>`

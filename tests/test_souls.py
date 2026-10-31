@@ -186,11 +186,17 @@ def test_training_is_not_a_request_and_not_in_the_spend(higgs, project, photos, 
     respx_mock.get(f"{API}/models/usage").mock(
         return_value=httpx.Response(200, json={"time_series": [], "total": 0, "page": 1, "limit": 100})
     )
+    hf = project / ".hf"
+    before = {path: path.read_bytes() for path in hf.rglob("*") if path.is_file()}
 
     result = higgs("soul", "train", "alice", *photos, "--json")
 
     assert result.exit_code == 0, result.output
-    assert list((project / ".hf" / "requests").iterdir()) == []
+    # The training images' upload cache is the only thing written into the Project's `.hf/`.
+    after = {path: path.read_bytes() for path in hf.rglob("*") if path.is_file()}
+    assert sorted(path.relative_to(hf).as_posix() for path in after.keys() - before.keys()) == ["uploads.json"]
+    assert all(after[path] == content for path, content in before.items())
+    assert list((hf / "requests").iterdir()) == []
     assert json.loads(higgs("list", "--json").output)["requests"] == []
     local = json.loads(higgs("usage", "--json").output)["project"]
     assert (local["spend_usd"], local["requests"]) == ("0", 0)
