@@ -25,6 +25,10 @@ The wrapper mounts, at identical absolute paths:
 - `~/.config/higgs/` (credentials, config, user catalog), read-write.
 
 Only the projects root is visible inside the container, so files you pass to `higgs` must live in a Project.
+Relative paths are relative to the folder you typed them in: from a folder outside the projects root
+(`cd ~/Desktop; higgs gen … --project demo -p image_url=photo.jpg`) they fail with
+`input_outside_projects_root` and a hint to copy the file into the Project's `inputs/`, never silently naming a
+file in the projects root. A bare Generation file name for `pick`/`ref save` is still looked up in the Project.
 The wrapper also passes the host's time zone (`TZ`, from `$TZ` or the `/etc/localtime` symlink, else UTC),
 so the times in Generation names are local.
 

@@ -27,6 +27,9 @@ image="$(higgs_ensure_image)"
 
 # Only the projects root is visible inside the container; run from the current
 # directory when it is inside it, so relative paths and Project discovery work.
+# HIGGS_HOST_PWD (below) carries the real $PWD either way: higgs resolves relative
+# paths against it, so one typed outside the projects root is rejected as such
+# instead of being resolved against the projects root.
 case "$PWD/" in
   "$projects_root"/*) workdir="$PWD" ;;
   *) workdir="$projects_root" ;;

@@ -20,7 +20,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-from hfcore import references
+from hfcore import config, references
 from hfcore.downloads import GenerationMetadata
 from hfcore.errors import HiggsError
 from hfcore.projects import Project
@@ -126,13 +126,16 @@ def copy_generation(generation: Path, folder: Path) -> CopiedGeneration:
 def find_generation(project: Project, value: str, *, cwd: Path) -> Path:
     """The Generation file `value` names.
 
-    Either a path (relative to `cwd`, or absolute), or a bare file name looked up in the
-    Project's `generations/YYYY-MM-DD/` folders. It must be in the Project's
-    `generations/` (a file in `final/` is already a Pick, one in `inputs/` or
-    `references/` is not a Generation) and must not be a Generation's `.json`.
+    Either a path (relative to `cwd`, `hfcore.config.working_dir()`, or absolute), or a
+    bare file name looked up in the Project's `generations/YYYY-MM-DD/` folders. It must be
+    in the Project's `generations/` (a file in `final/` is already a Pick, one in `inputs/`
+    or `references/` is not a Generation) and must not be a Generation's `.json`; a path
+    outside the projects root is `input_outside_projects_root`.
     """
     path = cwd / Path(value).expanduser()
-    if path.is_file():
+    root = config.projects_root().resolve()
+    outside = not path.resolve().is_relative_to(root)
+    if path.is_file() and not outside:
         generation = path.absolute()
         if not generation.resolve().is_relative_to((project.path / "generations").resolve()):
             raise HiggsError(
@@ -160,6 +163,15 @@ def find_generation(project: Project, value: str, *, cwd: Path) -> Path:
             f"Generation {value} is ambiguous: {listed}",
             hint="Pass the path of the one you mean.",
             code="ambiguous_generation",
+        )
+    if outside:  # e.g. a relative path typed in a host folder outside the projects root
+        raise HiggsError(
+            f"{value} is outside the projects root {root}",
+            hint=(
+                "Only the projects root is visible to higgs. Run the command from inside the Project, "
+                "or pass the Generation's file name alone to look it up in generations/."
+            ),
+            code="input_outside_projects_root",
         )
     raise HiggsError(
         f"No Generation {value} in Project {project.name}",
